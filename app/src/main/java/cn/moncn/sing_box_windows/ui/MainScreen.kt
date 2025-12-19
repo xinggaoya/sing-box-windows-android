@@ -67,7 +67,8 @@ fun MainScreen(
     onSelectSubscription: (String) -> Unit,
     onRemoveSubscription: (String) -> Unit,
     onUpdateSubscription: () -> Unit,
-    onSelectNode: (String, String) -> Unit
+    onSelectNode: (String, String) -> Unit,
+    onTestNode: (String) -> Unit
 ) {
     val accent = when (state) {
         VpnState.CONNECTED -> Teal600
@@ -165,7 +166,8 @@ fun MainScreen(
                 MainTab.Nodes -> NodesTab(
                     groups = groups,
                     accent = accent,
-                    onSelectNode = onSelectNode
+                    onSelectNode = onSelectNode,
+                    onTestNode = onTestNode
                 )
             }
         }
@@ -554,8 +556,10 @@ private fun SubscriptionTab(
 private fun NodesTab(
     groups: List<OutboundGroupModel>,
     accent: androidx.compose.ui.graphics.Color,
-    onSelectNode: (String, String) -> Unit
+    onSelectNode: (String, String) -> Unit,
+    onTestNode: (String) -> Unit
 ) {
+    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -647,13 +651,29 @@ private fun NodesTab(
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         )
+                                        val testTime = item.lastTestAt?.let {
+                                            timeFormatter.format(Date(it))
+                                        } ?: "—"
+                                        Text(
+                                            text = "测速时间：$testTime",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
                                     }
-                                    Button(
-                                        onClick = { onSelectNode(group.tag, item.tag) },
-                                        enabled = group.selectable && !isSelected,
-                                        colors = ButtonDefaults.buttonColors(containerColor = accent)
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(text = if (isSelected) "已选" else "选择")
+                                        OutlinedButton(onClick = { onTestNode(item.tag) }) {
+                                            Text(text = "测速")
+                                        }
+                                        Button(
+                                            onClick = { onSelectNode(group.tag, item.tag) },
+                                            enabled = group.selectable && !isSelected,
+                                            colors = ButtonDefaults.buttonColors(containerColor = accent)
+                                        ) {
+                                            Text(text = if (isSelected) "已选" else "选择")
+                                        }
                                     }
                                 }
                             }

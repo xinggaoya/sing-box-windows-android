@@ -51,7 +51,7 @@ class AppVpnService : android.net.VpnService() {
             return
         }
         VpnStateStore.update(VpnState.CONNECTING)
-        val notification = buildNotification("Connecting")
+        val notification = buildNotification("连接中")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -71,7 +71,7 @@ class AppVpnService : android.net.VpnService() {
         }
 
         VpnStateStore.update(VpnState.CONNECTED)
-        notifyStatus("Connected")
+        notifyStatus("已连接")
     }
 
     private fun stopTunnel(resetState: Boolean = true) {
@@ -100,6 +100,8 @@ class AppVpnService : android.net.VpnService() {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
@@ -114,7 +116,7 @@ class AppVpnService : android.net.VpnService() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "VPN",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             )
             manager?.createNotificationChannel(channel)
         }

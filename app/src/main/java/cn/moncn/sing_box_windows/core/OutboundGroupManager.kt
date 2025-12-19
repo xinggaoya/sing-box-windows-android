@@ -17,7 +17,8 @@ import androidx.compose.runtime.setValue
 data class OutboundItemModel(
     val tag: String,
     val type: String,
-    val delayMs: Int?
+    val delayMs: Int?,
+    val lastTestAt: Long?
 )
 
 data class OutboundGroupModel(
@@ -31,6 +32,7 @@ data class OutboundGroupModel(
 object OutboundGroupManager {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var client: CommandClient? = null
+    private var urlTestClient: CommandClient? = null
 
     var groups by mutableStateOf<List<OutboundGroupModel>>(emptyList())
         private set
@@ -63,11 +65,13 @@ object OutboundGroupManager {
                 while (itemIterator.hasNext()) {
                     val item = itemIterator.next()
                     val delay = if (item.urlTestDelay > 0) item.urlTestDelay else null
+                    val testTime = if (item.urlTestTime > 0) item.urlTestTime else null
                     items.add(
                         OutboundItemModel(
                             tag = item.tag,
                             type = item.type,
-                            delayMs = delay
+                            delayMs = delay,
+                            lastTestAt = testTime
                         )
                     )
                 }
@@ -98,6 +102,8 @@ object OutboundGroupManager {
     fun stop() {
         runCatching { client?.disconnect() }
         client = null
+        runCatching { urlTestClient?.disconnect() }
+        urlTestClient = null
         mainHandler.post { groups = emptyList() }
     }
 
@@ -117,6 +123,28 @@ object OutboundGroupManager {
     }
 
     fun urlTest(outboundTag: String) {
-        runCatching { client?.urlTest(outboundTag) }
+        ensureUrlTestClient()
+        runCatching { urlTestClient?.urlTest(outboundTag) }
+    }
+
+    private fun ensureUrlTestClient() {
+        if (urlTestClient != null) return
+        val options = CommandClientOptions().apply {
+            command = Libbox.CommandURLTest
+            statusInterval = 1000
+        }
+        val emptyHandler = object : CommandClientHandler {
+            override fun connected() = Unit
+            override fun disconnected(message: String) = Unit
+            override fun clearLogs() = Unit
+            override fun writeLogs(messageList: StringIterator) = Unit
+            override fun writeStatus(message: StatusMessage) = Unit
+            override fun writeConnections(message: Connections) = Unit
+            override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
+            override fun updateClashMode(newMode: String) = Unit
+            override fun writeGroups(message: OutboundGroupIterator) = Unit
+        }
+        urlTestClient = Libbox.newCommandClient(emptyHandler, options)
+        runCatching { urlTestClient?.connect() }
     }
 }

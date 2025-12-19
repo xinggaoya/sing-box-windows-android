@@ -1,7 +1,13 @@
 package cn.moncn.sing_box_windows
 
 import android.app.Activity
+import android.Manifest
 import android.net.VpnService
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,6 +23,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import cn.moncn.sing_box_windows.config.SubscriptionRepository
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.core.CoreStatusStore
@@ -53,6 +61,7 @@ class MainActivity : ComponentActivity() {
                 var urlInput by remember { mutableStateOf("") }
                 var updateMessage by remember { mutableStateOf<String?>(null) }
                 var updating by remember { mutableStateOf(false) }
+                var pendingConnect by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
                     subscriptions = withContext(Dispatchers.IO) {
@@ -70,6 +79,40 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val notificationLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    if (!granted) {
+                        Toast.makeText(
+                            context,
+                            "通知权限被拒绝，前台通知可能无法显示",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        pendingConnect = false
+                    } else if (pendingConnect) {
+                        pendingConnect = false
+                        val intent = VpnService.prepare(context)
+                        if (intent != null) {
+                            launcher.launch(intent)
+                        } else {
+                            VpnController.start(context)
+                        }
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val permission = Manifest.permission.POST_NOTIFICATIONS
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            permission
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!granted) {
+                            notificationLauncher.launch(permission)
+                        }
+                    }
+                }
+
                 MainScreen(
                     state = state,
                     error = error,
@@ -82,6 +125,28 @@ class MainActivity : ComponentActivity() {
                     updating = updating,
                     groups = groups,
                     onConnect = {
+                        val notificationsEnabled =
+                            NotificationManagerCompat.from(context).areNotificationsEnabled()
+                        if (!notificationsEnabled) {
+                            Toast.makeText(
+                                context,
+                                "请在系统设置中允许通知，否则无法显示常驻通知",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                val permission = Manifest.permission.POST_NOTIFICATIONS
+                                val granted = ContextCompat.checkSelfPermission(
+                                    context,
+                                    permission
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (!granted) {
+                                    pendingConnect = true
+                                    notificationLauncher.launch(permission)
+                                    return@MainScreen
+                                }
+                            }
+                            openNotificationSettings(context)
+                        }
                         val intent = VpnService.prepare(context)
                         if (intent != null) {
                             launcher.launch(intent)
@@ -142,6 +207,11 @@ class MainActivity : ComponentActivity() {
                         scope.launch {
                             OutboundGroupManager.select(groupTag, outboundTag)
                         }
+                    },
+                    onTestNode = { outboundTag ->
+                        scope.launch {
+                            OutboundGroupManager.urlTest(outboundTag)
+                        }
                     })
             }
         }
@@ -171,6 +241,15 @@ fun MainPreview() {
             onSelectSubscription = {},
             onRemoveSubscription = {},
             onUpdateSubscription = {},
-            onSelectNode = { _, _ -> })
+            onSelectNode = { _, _ -> },
+            onTestNode = {})
     }
+}
+
+private fun openNotificationSettings(context: android.content.Context) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
 }
