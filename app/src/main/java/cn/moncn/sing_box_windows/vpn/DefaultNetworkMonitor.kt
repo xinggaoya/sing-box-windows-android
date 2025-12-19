@@ -61,13 +61,18 @@ object DefaultNetworkMonitor {
         network: Network?,
         caps: NetworkCapabilities? = null
     ) {
-        if (network == null) {
+        val resolved = resolveNetwork(connectivity, network)
+        if (resolved == null) {
             listener?.updateDefaultInterface("", -1, false, false)
             return
         }
 
-        val linkProperties = connectivity.getLinkProperties(network)
-        val capabilities = caps ?: connectivity.getNetworkCapabilities(network)
+        val linkProperties = connectivity.getLinkProperties(resolved)
+        val capabilities = if (resolved == network) {
+            caps ?: connectivity.getNetworkCapabilities(resolved)
+        } else {
+            connectivity.getNetworkCapabilities(resolved)
+        }
         val interfaceName = linkProperties?.interfaceName.orEmpty()
         val interfaceIndex = NetworkInterface.getByName(interfaceName)?.index ?: -1
         val isExpensive = capabilities?.hasCapability(
@@ -78,5 +83,22 @@ object DefaultNetworkMonitor {
         ) == false
 
         listener?.updateDefaultInterface(interfaceName, interfaceIndex, isExpensive, isConstrained)
+    }
+
+    private fun resolveNetwork(connectivity: ConnectivityManager, network: Network?): Network? {
+        if (network == null) {
+            return null
+        }
+        val candidates = connectivity.allNetworks.mapNotNull { candidate ->
+            val caps = connectivity.getNetworkCapabilities(candidate) ?: return@mapNotNull null
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@mapNotNull null
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null
+            candidate to caps
+        }
+        val preferred = candidates.firstOrNull { it.second.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) }
+            ?: candidates.firstOrNull { it.second.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) }
+            ?: candidates.firstOrNull { it.second.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) }
+            ?: candidates.firstOrNull()
+        return preferred?.first ?: network
     }
 }
