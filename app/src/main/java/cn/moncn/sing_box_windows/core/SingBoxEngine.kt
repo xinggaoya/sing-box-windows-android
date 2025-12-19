@@ -16,6 +16,7 @@ object SingBoxEngine {
             val instance = Libbox.newService(configJson, platform)
             instance.start()
             CommandServerHolder.start(instance)
+            CoreStatusManager.start()
             OutboundGroupManager.start()
             service = instance
             LibboxServiceHolder.service = instance
@@ -31,6 +32,7 @@ object SingBoxEngine {
             return
         }
         OutboundGroupManager.stop()
+        CoreStatusManager.stop()
         CommandServerHolder.stop()
         try {
             service?.close()

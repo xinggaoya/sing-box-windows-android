@@ -118,7 +118,7 @@ object TemplateConfigBuilder {
             .put("url", "https://www.gstatic.com/generate_204")
             .put("interval", "3m")
             .put("tolerance", 50)
-            .put("interrupt_exist_connections", false)
+            .put("interrupt_exist_connections", true)
         outbounds.put(autoGroup)
 
         outbounds.put(
@@ -133,6 +133,7 @@ object TemplateConfigBuilder {
                     }
                 )
                 .put("default", TAG_AUTO)
+                .put("interrupt_exist_connections", true)
         )
 
         val serviceTags = listOf(TAG_TELEGRAM, TAG_YOUTUBE, TAG_NETFLIX, TAG_OPENAI)
@@ -143,6 +144,7 @@ object TemplateConfigBuilder {
                     .put("tag", tag)
                     .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = false))
                     .put("default", TAG_AUTO)
+                    .put("interrupt_exist_connections", true)
             )
         }
 
@@ -154,6 +156,7 @@ object TemplateConfigBuilder {
                     .put("tag", tag)
                     .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = true))
                     .put("default", TAG_DIRECT)
+                    .put("interrupt_exist_connections", true)
             )
         }
 
@@ -165,6 +168,7 @@ object TemplateConfigBuilder {
                     .put("tag", tag)
                     .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = true))
                     .put("default", TAG_AUTO)
+                    .put("interrupt_exist_connections", true)
             )
         }
 
@@ -174,6 +178,7 @@ object TemplateConfigBuilder {
                 .put("tag", TAG_LOCAL)
                 .put("outbounds", buildLocalOutbounds(nodeTags))
                 .put("default", TAG_DIRECT)
+                .put("interrupt_exist_connections", true)
         )
 
         outbounds.put(JSONObject().put("type", "direct").put("tag", TAG_DIRECT))

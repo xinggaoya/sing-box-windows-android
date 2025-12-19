@@ -19,12 +19,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import cn.moncn.sing_box_windows.config.SubscriptionRepository
 import cn.moncn.sing_box_windows.config.SubscriptionState
+import cn.moncn.sing_box_windows.core.CoreStatusStore
+import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.OutboundGroupManager
 import cn.moncn.sing_box_windows.ui.MainScreen
 import cn.moncn.sing_box_windows.ui.theme.SingboxwindowsTheme
 import cn.moncn.sing_box_windows.vpn.VpnController
 import cn.moncn.sing_box_windows.vpn.VpnState
 import cn.moncn.sing_box_windows.vpn.VpnStateStore
+import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,6 +35,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LibboxManager.initialize(this)
         enableEdgeToEdge()
         setContent {
             SingboxwindowsTheme {
@@ -40,6 +44,10 @@ class MainActivity : ComponentActivity() {
                 val error = VpnStateStore.lastError
                 val scope = rememberCoroutineScope()
                 val groups = OutboundGroupManager.groups
+                val coreStatus = CoreStatusStore.status
+                val coreVersion = remember {
+                    runCatching { Libbox.version() }.getOrNull()
+                }
                 var subscriptions by remember { mutableStateOf(SubscriptionState.empty()) }
                 var nameInput by remember { mutableStateOf("") }
                 var urlInput by remember { mutableStateOf("") }
@@ -65,6 +73,8 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     state = state,
                     error = error,
+                    coreStatus = coreStatus,
+                    coreVersion = coreVersion,
                     subscriptions = subscriptions,
                     nameInput = nameInput,
                     urlInput = urlInput,
@@ -145,6 +155,8 @@ fun MainPreview() {
         MainScreen(
             state = VpnState.IDLE,
             error = null,
+            coreStatus = null,
+            coreVersion = "1.0.0",
             subscriptions = SubscriptionState.empty(),
             nameInput = "",
             urlInput = "",

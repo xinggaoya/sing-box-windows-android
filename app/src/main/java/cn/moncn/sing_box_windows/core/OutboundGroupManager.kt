@@ -103,5 +103,20 @@ object OutboundGroupManager {
 
     fun select(groupTag: String, outboundTag: String) {
         runCatching { client?.selectOutbound(groupTag, outboundTag) }
+        mainHandler.post {
+            groups = groups.map { group ->
+                if (group.tag == groupTag) {
+                    group.copy(selected = outboundTag)
+                } else {
+                    group
+                }
+            }
+        }
+        // 主动断开旧连接，让节点切换立即生效，避免需重启才能观察到变化。
+        runCatching { client?.closeConnections() }
+    }
+
+    fun urlTest(outboundTag: String) {
+        runCatching { client?.urlTest(outboundTag) }
     }
 }

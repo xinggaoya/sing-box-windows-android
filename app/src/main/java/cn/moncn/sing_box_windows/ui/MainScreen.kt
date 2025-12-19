@@ -36,11 +36,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.moncn.sing_box_windows.config.SubscriptionState
+import cn.moncn.sing_box_windows.core.CoreStatus
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
 import cn.moncn.sing_box_windows.ui.theme.Amber500
 import cn.moncn.sing_box_windows.ui.theme.Moss500
 import cn.moncn.sing_box_windows.ui.theme.Teal600
 import cn.moncn.sing_box_windows.vpn.VpnState
+import io.nekohasekai.libbox.Libbox
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,6 +51,8 @@ import java.util.Locale
 fun MainScreen(
     state: VpnState,
     error: String?,
+    coreStatus: CoreStatus?,
+    coreVersion: String?,
     subscriptions: SubscriptionState,
     nameInput: String,
     urlInput: String,
@@ -137,6 +141,8 @@ fun MainScreen(
                     statusText = statusText,
                     actionText = actionText,
                     accent = accent,
+                    coreStatus = coreStatus,
+                    coreVersion = coreVersion,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect
                 )
@@ -173,9 +179,12 @@ private fun HomeTab(
     statusText: String,
     actionText: String,
     accent: androidx.compose.ui.graphics.Color,
+    coreStatus: CoreStatus?,
+    coreVersion: String?,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
+    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -199,6 +208,150 @@ private fun HomeTab(
                             text = error,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            val status = coreStatus
+            val updatedAt = status?.updatedAt?.let { timeFormatter.format(Date(it)) } ?: "—"
+            val trafficAvailable = status?.trafficAvailable == true
+            val coreVersionText = coreVersion?.takeIf { it.isNotBlank() } ?: "—"
+            val memoryText = status?.let { formatMemory(it.memoryBytes) } ?: "—"
+            val goroutinesText = status?.goroutines?.toString() ?: "—"
+            val connectionsText = status?.let { "${it.connectionsIn}/${it.connectionsOut}" } ?: "—"
+            val uplinkText = if (trafficAvailable && status != null) {
+                formatSpeed(status.uplinkBytes)
+            } else {
+                "—"
+            }
+            val downlinkText = if (trafficAvailable && status != null) {
+                formatSpeed(status.downlinkBytes)
+            } else {
+                "—"
+            }
+            val uplinkTotalText = if (trafficAvailable && status != null) {
+                formatBytes(status.uplinkTotalBytes)
+            } else {
+                "—"
+            }
+            val downlinkTotalText = if (trafficAvailable && status != null) {
+                formatBytes(status.downlinkTotalBytes)
+            } else {
+                "—"
+            }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "核心与流量",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "最近更新：$updatedAt",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        Text(
+                            text = if (state == VpnState.CONNECTED) "运行中" else "未连接",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        StatItem(
+                            label = "内核版本",
+                            value = coreVersionText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "内存",
+                            value = memoryText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "协程",
+                            value = goroutinesText,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        StatItem(
+                            label = "连接(入/出)",
+                            value = connectionsText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "流量统计",
+                            value = if (trafficAvailable) "已开启" else "未开启",
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "状态",
+                            value = statusText,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        StatItem(
+                            label = "上行速率",
+                            value = uplinkText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "下行速率",
+                            value = downlinkText,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        StatItem(
+                            label = "上行总量",
+                            value = uplinkTotalText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatItem(
+                            label = "下行总量",
+                            value = downlinkTotalText,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (!trafficAvailable) {
+                        Text(
+                            text = "流量统计未开启，可检查 sing-box 配置中的 stats/实验选项。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -531,6 +684,37 @@ private fun StatusRow(color: androidx.compose.ui.graphics.Color, label: String) 
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+@Composable
+private fun StatItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+private fun formatBytes(value: Long): String {
+    if (value <= 0) return "0B"
+    return runCatching { Libbox.formatBytes(value) }.getOrElse { "${value}B" }
+}
+
+private fun formatMemory(value: Long): String {
+    if (value <= 0) return "0B"
+    return runCatching { Libbox.formatMemoryBytes(value) }.getOrElse { formatBytes(value) }
+}
+
+private fun formatSpeed(value: Long): String {
+    if (value <= 0) return "0B/s"
+    return "${formatBytes(value)}/s"
 }
 
 private enum class MainTab(val title: String) {
