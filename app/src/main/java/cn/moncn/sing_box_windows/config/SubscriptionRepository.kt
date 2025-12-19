@@ -215,11 +215,14 @@ object SubscriptionRepository {
         }
         val decodedBytes = decodeBase64(trimmed) ?: return raw
         val decodedText = decodedBytes.toString(Charsets.UTF_8)
-        if (isLikelyYaml(decodedText) || isLikelyJson(decodedText)) {
+        if (isLikelyYaml(decodedText) || isLikelyJson(decodedText) || isLikelyProxyUriList(decodedText)) {
             return decodedText
         }
         val decompressed = tryDecompress(decodedBytes)
-        if (!decompressed.isNullOrBlank() && (isLikelyYaml(decompressed) || isLikelyJson(decompressed))) {
+        if (
+            !decompressed.isNullOrBlank()
+            && (isLikelyYaml(decompressed) || isLikelyJson(decompressed) || isLikelyProxyUriList(decompressed))
+        ) {
             return decompressed
         }
         return raw
@@ -235,7 +238,8 @@ object SubscriptionRepository {
             return false
         }
         val normalized = text.replace("\n", "").replace("\r", "")
-        if (normalized.length % 4 != 0) {
+        val remainder = normalized.length % 4
+        if (remainder == 1) {
             return false
         }
         val base64Regex = Regex("^[A-Za-z0-9+/=_-]+$")
@@ -244,10 +248,16 @@ object SubscriptionRepository {
 
     private fun decodeBase64(text: String): ByteArray? {
         val normalized = text.replace("\n", "").replace("\r", "")
+        val padded = when (normalized.length % 4) {
+            0 -> normalized
+            2 -> "$normalized=="
+            3 -> "$normalized="
+            else -> normalized
+        }
         return runCatching {
-            Base64.decode(normalized, Base64.NO_WRAP)
+            Base64.decode(padded, Base64.NO_WRAP)
         }.getOrNull() ?: runCatching {
-            Base64.decode(normalized, Base64.NO_WRAP or Base64.URL_SAFE)
+            Base64.decode(padded, Base64.NO_WRAP or Base64.URL_SAFE)
         }.getOrNull()
     }
 
@@ -285,6 +295,14 @@ object SubscriptionRepository {
         return sample.contains("\"outbounds\"") || sample.contains("\"inbounds\"")
     }
 
+    private fun isLikelyProxyUriList(text: String): Boolean {
+        val schemes = listOf("trojan://", "vmess://", "vless://", "ss://", "ssr://", "hysteria2://", "tuic://")
+        return text.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .any { line -> schemes.any { scheme -> line.startsWith(scheme, ignoreCase = true) } }
+    }
+
     private fun convertProxyUriListToJson(content: String): String? {
         val lines = content.lineSequence()
             .map { it.trim() }
@@ -302,13 +320,16 @@ object SubscriptionRepository {
         }
         val array = JSONArray()
         proxies.forEach { array.put(it) }
-        return JSONObject().put("proxies", array).toString()
+        // 将订阅中的 URI 列表包装为 sing-box outbounds，便于后续解析
+        return JSONObject().put("outbounds", array).toString()
     }
 
     private fun parseProxyUri(line: String, fallbackName: String): JSONObject? {
         return when {
             line.startsWith("trojan://", ignoreCase = true) -> parseTrojanUri(line, fallbackName)
             line.startsWith("vmess://", ignoreCase = true) -> parseVmessUri(line, fallbackName)
+            line.startsWith("vless://", ignoreCase = true) -> parseVlessUri(line, fallbackName)
+            line.startsWith("ss://", ignoreCase = true) -> parseShadowsocksUri(line, fallbackName)
             else -> null
         }
     }
@@ -316,7 +337,7 @@ object SubscriptionRepository {
     private fun parseTrojanUri(line: String, fallbackName: String): JSONObject? {
         val withoutScheme = line.substringAfter("://")
         val fragment = line.substringAfter("#", "")
-        val name = fragment.takeIf { it.isNotBlank() } ?: fallbackName
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() } ?: fallbackName
         val withoutFragment = withoutScheme.substringBefore("#")
         val hostPart = withoutFragment.substringBefore("?")
         val queryPart = withoutFragment.substringAfter("?", "")
@@ -330,6 +351,7 @@ object SubscriptionRepository {
         val queryMap = parseQueryParameters(queryPart)
         val tls = JSONObject().put("enabled", true)
         queryMap["sni"]?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+        parseBoolean(queryMap["allowInsecure"])?.let { tls.put("insecure", it) }
         queryMap["alpn"]?.takeIf { it.isNotBlank() }?.let { value ->
             val list = value.split(",").mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
             if (list.isNotEmpty()) {
@@ -345,8 +367,6 @@ object SubscriptionRepository {
             .put("server_port", port)
             .put("password", password)
             .put("tls", tls)
-        queryMap["sni"]?.takeIf { it.isNotBlank() }?.let { node.put("sni", it) }
-        parseBoolean(queryMap["allowInsecure"])?.let { node.put("insecure", it) }
         return node
     }
 
@@ -357,7 +377,7 @@ object SubscriptionRepository {
         val decodedBytes = decodeBase64(encoded) ?: return null
         val jsonText = decodedBytes.toString(Charsets.UTF_8)
         val root = JSONObject(jsonText)
-        val name = fragment.takeIf { it.isNotBlank() }
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() }
             ?: root.optString("ps").takeIf { it.isNotBlank() }
             ?: fallbackName
         val node = JSONObject()
@@ -386,6 +406,105 @@ object SubscriptionRepository {
                 val transport = JSONObject().put("type", "grpc")
                     .put("service_name", root.optString("path", ""))
                 node.put("transport", transport)
+            }
+        }
+        return node
+    }
+
+    private fun parseVlessUri(line: String, fallbackName: String): JSONObject? {
+        val withoutScheme = line.substringAfter("://")
+        val fragment = withoutScheme.substringAfter("#", "")
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() } ?: fallbackName
+        val withoutFragment = withoutScheme.substringBefore("#")
+        val hostPart = withoutFragment.substringBefore("?")
+        val queryPart = withoutFragment.substringAfter("?", "")
+        val atIndex = hostPart.indexOf('@')
+        if (atIndex <= 0) {
+            return null
+        }
+        val uuid = hostPart.substring(0, atIndex)
+        val hostPort = hostPart.substring(atIndex + 1)
+        val (host, port) = splitHostPort(hostPort, 443)
+        val queryMap = parseQueryParameters(queryPart)
+        val node = JSONObject()
+            .put("type", "vless")
+            .put("tag", name)
+            .put("server", host)
+            .put("server_port", port)
+            .put("uuid", uuid)
+        queryMap["flow"]?.takeIf { it.isNotBlank() }?.let { node.put("flow", it) }
+        val security = queryMap["security"]?.lowercase()
+        if (!security.isNullOrBlank() && security != "none") {
+            val tls = JSONObject().put("enabled", true)
+            queryMap["sni"]?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+            parseBoolean(queryMap["allowInsecure"] ?: queryMap["allow_insecure"])
+                ?.let { tls.put("insecure", it) }
+            node.put("tls", tls)
+        }
+        val network = (queryMap["type"] ?: queryMap["network"])?.lowercase()
+        when (network) {
+            "ws" -> {
+                val transport = JSONObject().put("type", "ws")
+                queryMap["path"]?.takeIf { it.isNotBlank() }?.let { transport.put("path", it) }
+                val hostHeader = queryMap["host"]?.takeIf { it.isNotBlank() }
+                if (!hostHeader.isNullOrBlank()) {
+                    transport.put("headers", JSONObject().put("Host", hostHeader))
+                }
+                node.put("transport", transport)
+            }
+            "grpc" -> {
+                val transport = JSONObject().put("type", "grpc")
+                queryMap["serviceName"]?.takeIf { it.isNotBlank() }?.let { transport.put("service_name", it) }
+                queryMap["service_name"]?.takeIf { it.isNotBlank() }?.let { transport.put("service_name", it) }
+                node.put("transport", transport)
+            }
+        }
+        return node
+    }
+
+    private fun parseShadowsocksUri(line: String, fallbackName: String): JSONObject? {
+        val withoutScheme = line.substringAfter("://")
+        val fragment = withoutScheme.substringAfter("#", "")
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() } ?: fallbackName
+        val withoutFragment = withoutScheme.substringBefore("#")
+        val mainPart = withoutFragment.substringBefore("?")
+        val queryPart = withoutFragment.substringAfter("?", "")
+        val userInfoHost = if (mainPart.contains("@")) {
+            mainPart
+        } else {
+            val decoded = decodeBase64(mainPart) ?: return null
+            decoded.toString(Charsets.UTF_8)
+        }
+        val atIndex = userInfoHost.lastIndexOf('@')
+        if (atIndex <= 0) {
+            return null
+        }
+        var userInfo = userInfoHost.substring(0, atIndex)
+        if (!userInfo.contains(":") && looksLikeBase64(userInfo)) {
+            userInfo = decodeBase64(userInfo)?.toString(Charsets.UTF_8) ?: return null
+        }
+        val hostPort = userInfoHost.substring(atIndex + 1)
+        val methodPassword = userInfo.split(":", limit = 2)
+        if (methodPassword.size < 2) {
+            return null
+        }
+        val method = decodeUriComponent(methodPassword[0])
+        val password = decodeUriComponent(methodPassword[1])
+        val (host, port) = splitHostPort(hostPort, 8388)
+        val node = JSONObject()
+            .put("type", "shadowsocks")
+            .put("tag", name)
+            .put("server", host)
+            .put("server_port", port)
+            .put("method", method)
+            .put("password", password)
+        val queryMap = parseQueryParameters(queryPart)
+        queryMap["plugin"]?.takeIf { it.isNotBlank() }?.let { pluginSpec ->
+            val pluginDecoded = decodeUriComponent(pluginSpec)
+            val parts = pluginDecoded.split(";", limit = 2)
+            node.put("plugin", parts[0])
+            if (parts.size > 1 && parts[1].isNotBlank()) {
+                node.put("plugin_opts", parts[1])
             }
         }
         return node

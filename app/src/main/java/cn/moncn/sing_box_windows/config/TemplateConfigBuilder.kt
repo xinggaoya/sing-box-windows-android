@@ -125,7 +125,14 @@ object TemplateConfigBuilder {
             JSONObject()
                 .put("type", "selector")
                 .put("tag", TAG_PROXY)
-                .put("outbounds", JSONArray().apply { nodeTags.forEach { put(it) } })
+                .put(
+                    "outbounds",
+                    JSONArray().apply {
+                        put(TAG_AUTO)
+                        nodeTags.forEach { put(it) }
+                    }
+                )
+                .put("default", TAG_AUTO)
         )
 
         val serviceTags = listOf(TAG_TELEGRAM, TAG_YOUTUBE, TAG_NETFLIX, TAG_OPENAI)
@@ -135,16 +142,29 @@ object TemplateConfigBuilder {
                     .put("type", "selector")
                     .put("tag", tag)
                     .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = false))
+                    .put("default", TAG_AUTO)
             )
         }
 
-        val directServiceTags = listOf(TAG_APPLE, TAG_GOOGLE, TAG_MICROSOFT, TAG_GITHUB)
-        directServiceTags.forEach { tag ->
+        val directDefaultTags = listOf(TAG_APPLE, TAG_MICROSOFT)
+        directDefaultTags.forEach { tag ->
             outbounds.put(
                 JSONObject()
                     .put("type", "selector")
                     .put("tag", tag)
                     .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = true))
+                    .put("default", TAG_DIRECT)
+            )
+        }
+
+        val proxyDefaultTags = listOf(TAG_GOOGLE, TAG_GITHUB)
+        proxyDefaultTags.forEach { tag ->
+            outbounds.put(
+                JSONObject()
+                    .put("type", "selector")
+                    .put("tag", tag)
+                    .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = true))
+                    .put("default", TAG_AUTO)
             )
         }
 
@@ -534,8 +554,8 @@ object TemplateConfigBuilder {
 
     private fun buildServiceOutbounds(nodeTags: List<String>, includeDirect: Boolean): JSONArray {
         val outbounds = JSONArray()
-        outbounds.put(TAG_PROXY)
         outbounds.put(TAG_AUTO)
+        outbounds.put(TAG_PROXY)
         if (includeDirect) {
             outbounds.put(TAG_DIRECT)
         }
@@ -546,8 +566,8 @@ object TemplateConfigBuilder {
     private fun buildLocalOutbounds(nodeTags: List<String>): JSONArray {
         val outbounds = JSONArray()
         outbounds.put(TAG_DIRECT)
-        outbounds.put(TAG_PROXY)
         outbounds.put(TAG_AUTO)
+        outbounds.put(TAG_PROXY)
         nodeTags.forEach { outbounds.put(it) }
         return outbounds
     }
