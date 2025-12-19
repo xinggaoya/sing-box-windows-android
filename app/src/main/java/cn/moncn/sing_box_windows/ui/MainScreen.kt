@@ -1,29 +1,36 @@
 package cn.moncn.sing_box_windows.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,19 +40,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.core.CoreStatus
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
 import cn.moncn.sing_box_windows.ui.theme.Amber500
-import cn.moncn.sing_box_windows.ui.theme.Moss500
-import cn.moncn.sing_box_windows.ui.theme.Teal600
+import cn.moncn.sing_box_windows.ui.theme.Mint500
+import cn.moncn.sing_box_windows.ui.theme.Rose500
 import cn.moncn.sing_box_windows.vpn.VpnState
 import io.nekohasekai.libbox.Libbox
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private val CardShape = RoundedCornerShape(24.dp)
+private val PillShape = RoundedCornerShape(999.dp)
 
 @Composable
 fun MainScreen(
@@ -70,22 +81,25 @@ fun MainScreen(
     onSelectNode: (String, String) -> Unit,
     onTestNode: (String) -> Unit
 ) {
-    val accent = when (state) {
-        VpnState.CONNECTED -> Teal600
-        VpnState.CONNECTING -> Amber500
-        VpnState.ERROR -> Moss500
-        VpnState.IDLE -> Teal600
-    }
+    val statusColor by animateColorAsState(
+        targetValue = when (state) {
+            VpnState.CONNECTED -> Mint500
+            VpnState.CONNECTING -> Amber500
+            VpnState.ERROR -> Rose500
+            VpnState.IDLE -> MaterialTheme.colorScheme.primary
+        },
+        label = "statusColor"
+    )
     val statusText = when (state) {
         VpnState.CONNECTED -> "已连接"
         VpnState.CONNECTING -> "连接中"
-        VpnState.ERROR -> "错误"
+        VpnState.ERROR -> "连接异常"
         VpnState.IDLE -> "未连接"
     }
     val actionText = if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
-        "断开"
+        "断开连接"
     } else {
-        "连接"
+        "开始连接"
     }
     val selected = subscriptions.selected()
     val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
@@ -102,53 +116,41 @@ fun MainScreen(
                     )
                 )
             )
-            .padding(24.dp)
     ) {
+        // 背景氛围层，提升整体层次感。
+        BackgroundOrnaments()
+
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "sing-box-windows",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "基于 sing-box 内核的移动代理",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
-            }
+            AppHeader(statusText = statusText, statusColor = statusColor)
 
-            TabRow(
-                selectedTabIndex = currentTab.ordinal,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                MainTab.entries.forEach { tab ->
-                    Tab(
-                        selected = currentTab == tab,
-                        onClick = { currentTab = tab },
-                        text = { Text(tab.title) }
-                    )
-                }
-            }
+            TabSwitcher(
+                currentTab = currentTab,
+                highlightColor = MaterialTheme.colorScheme.primary,
+                onTabSelected = { currentTab = it }
+            )
 
             when (currentTab) {
                 MainTab.Home -> HomeTab(
+                    modifier = Modifier.weight(1f),
                     state = state,
                     error = error,
                     statusText = statusText,
                     actionText = actionText,
-                    accent = accent,
+                    statusColor = statusColor,
                     coreStatus = coreStatus,
                     coreVersion = coreVersion,
                     onConnect = onConnect,
                     onDisconnect = onDisconnect
                 )
                 MainTab.Subscriptions -> SubscriptionTab(
-                    accent = accent,
+                    modifier = Modifier.weight(1f),
                     selectedName = selected?.name,
                     subscriptions = subscriptions,
                     nameInput = nameInput,
@@ -164,8 +166,9 @@ fun MainScreen(
                     onUpdateSubscription = onUpdateSubscription
                 )
                 MainTab.Nodes -> NodesTab(
+                    modifier = Modifier.weight(1f),
                     groups = groups,
-                    accent = accent,
+                    accent = MaterialTheme.colorScheme.primary,
                     onSelectNode = onSelectNode,
                     onTestNode = onTestNode
                 )
@@ -176,214 +179,153 @@ fun MainScreen(
 
 @Composable
 private fun HomeTab(
+    modifier: Modifier,
     state: VpnState,
     error: String?,
     statusText: String,
     actionText: String,
-    accent: androidx.compose.ui.graphics.Color,
+    statusColor: Color,
     coreStatus: CoreStatus?,
     coreVersion: String?,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
+    val status = coreStatus
+    val updatedAt = status?.updatedAt?.let { timeFormatter.format(Date(it)) } ?: "—"
+    val trafficAvailable = status?.trafficAvailable == true
+    val coreVersionText = coreVersion?.takeIf { it.isNotBlank() } ?: "—"
+    val memoryText = status?.let { formatMemory(it.memoryBytes) } ?: "—"
+    val goroutinesText = status?.goroutines?.toString() ?: "—"
+    val connectionsText = status?.let { "${it.connectionsIn}/${it.connectionsOut}" } ?: "—"
+    val uplinkText = if (trafficAvailable && status != null) {
+        formatSpeed(status.uplinkBytes)
+    } else {
+        "—"
+    }
+    val downlinkText = if (trafficAvailable && status != null) {
+        formatSpeed(status.downlinkBytes)
+    } else {
+        "—"
+    }
+    val uplinkTotalText = if (trafficAvailable && status != null) {
+        formatBytes(status.uplinkTotalBytes)
+    } else {
+        "—"
+    }
+    val downlinkTotalText = if (trafficAvailable && status != null) {
+        formatBytes(status.downlinkTotalBytes)
+    } else {
+        "—"
+    }
+
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatusRow(color = accent, label = statusText)
-                    Text(
-                        text = "模式：VPN",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
+            ConnectionHero(
+                statusText = statusText,
+                state = state,
+                error = error,
+                statusColor = statusColor,
+                actionText = actionText,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect
+            )
+        }
+        item {
+            SectionCard {
+                SectionTitle(
+                    title = "核心状态",
+                    subtitle = "最近更新：$updatedAt"
+                )
+                // 统计信息可能为空，统一使用占位符避免布局跳动。
+                MetricRow {
+                    MetricTile(
+                        label = "内核版本",
+                        value = coreVersionText,
+                        modifier = Modifier.weight(1f)
                     )
-                    if (!error.isNullOrBlank()) {
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
+                    MetricTile(
+                        label = "内存",
+                        value = memoryText,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                MetricRow {
+                    MetricTile(
+                        label = "协程",
+                        value = goroutinesText,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricTile(
+                        label = "连接(入/出)",
+                        value = connectionsText,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                MetricRow {
+                    MetricTile(
+                        label = "运行状态",
+                        value = statusText,
+                        modifier = Modifier.weight(1f),
+                        highlight = state == VpnState.CONNECTED
+                    )
+                    MetricTile(
+                        label = "统计开关",
+                        value = if (trafficAvailable) "已开启" else "未开启",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
         item {
-            val status = coreStatus
-            val updatedAt = status?.updatedAt?.let { timeFormatter.format(Date(it)) } ?: "—"
-            val trafficAvailable = status?.trafficAvailable == true
-            val coreVersionText = coreVersion?.takeIf { it.isNotBlank() } ?: "—"
-            val memoryText = status?.let { formatMemory(it.memoryBytes) } ?: "—"
-            val goroutinesText = status?.goroutines?.toString() ?: "—"
-            val connectionsText = status?.let { "${it.connectionsIn}/${it.connectionsOut}" } ?: "—"
-            val uplinkText = if (trafficAvailable && status != null) {
-                formatSpeed(status.uplinkBytes)
-            } else {
-                "—"
-            }
-            val downlinkText = if (trafficAvailable && status != null) {
-                formatSpeed(status.downlinkBytes)
-            } else {
-                "—"
-            }
-            val uplinkTotalText = if (trafficAvailable && status != null) {
-                formatBytes(status.uplinkTotalBytes)
-            } else {
-                "—"
-            }
-            val downlinkTotalText = if (trafficAvailable && status != null) {
-                formatBytes(status.downlinkTotalBytes)
-            } else {
-                "—"
-            }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "核心与流量",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "最近更新：$updatedAt",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                        Text(
-                            text = if (state == VpnState.CONNECTED) "运行中" else "未连接",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        StatItem(
-                            label = "内核版本",
-                            value = coreVersionText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "内存",
-                            value = memoryText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "协程",
-                            value = goroutinesText,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        StatItem(
-                            label = "连接(入/出)",
-                            value = connectionsText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "流量统计",
-                            value = if (trafficAvailable) "已开启" else "未开启",
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "状态",
-                            value = statusText,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        StatItem(
-                            label = "上行速率",
-                            value = uplinkText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "下行速率",
-                            value = downlinkText,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        StatItem(
-                            label = "上行总量",
-                            value = uplinkTotalText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatItem(
-                            label = "下行总量",
-                            value = downlinkTotalText,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    if (!trafficAvailable) {
-                        Text(
-                            text = "流量统计未开启，可检查 sing-box 配置中的 stats/实验选项。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
+            SectionCard {
+                SectionTitle(
+                    title = "流量概览",
+                    subtitle = if (trafficAvailable) "实时统计中" else "统计未开启"
+                )
+                MetricRow {
+                    MetricTile(
+                        label = "上行速率",
+                        value = uplinkText,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricTile(
+                        label = "下行速率",
+                        value = downlinkText,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                MetricRow {
+                    MetricTile(
+                        label = "上行总量",
+                        value = uplinkTotalText,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricTile(
+                        label = "下行总量",
+                        value = downlinkTotalText,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (!trafficAvailable) {
+                    Text(
+                        text = "流量统计未开启，可在 sing-box 配置中启用 stats/实验选项。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
-        item {
-            Button(
-                onClick = {
-                    if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
-                        onDisconnect()
-                    } else {
-                        onConnect()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                enabled = state != VpnState.CONNECTING
-            ) {
-                Text(text = actionText, style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        item { Spacer(modifier = Modifier.height(4.dp)) }
     }
 }
 
 @Composable
 private fun SubscriptionTab(
-    accent: androidx.compose.ui.graphics.Color,
+    modifier: Modifier,
     selectedName: String?,
     subscriptions: SubscriptionState,
     nameInput: String,
@@ -399,134 +341,130 @@ private fun SubscriptionTab(
     onUpdateSubscription: () -> Unit
 ) {
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = "订阅管理",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = selectedName ?: "未选择订阅",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+            SectionCard {
+                SectionTitle(
+                    title = "订阅管理",
+                    subtitle = selectedName ?: "未选择订阅",
+                    trailing = {
                         Button(
                             onClick = onUpdateSubscription,
                             enabled = !updating && selectedName != null,
-                            colors = ButtonDefaults.buttonColors(containerColor = accent)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
                         ) {
                             Text(text = if (updating) "更新中..." else "更新订阅")
                         }
                     }
+                )
 
-                    if (!updateMessage.isNullOrBlank()) {
-                        Text(
-                            text = updateMessage,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
+                if (!updateMessage.isNullOrBlank()) {
+                    InfoBanner(message = updateMessage)
+                }
+            }
+        }
 
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = onNameChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("名称（可选）") },
-                        singleLine = true
+        item {
+            SectionCard {
+                SectionTitle(title = "添加订阅", subtitle = "支持 Clash/通用订阅地址")
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = onNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("名称（可选）") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = onUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("订阅地址") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                Button(
+                    onClick = onAddSubscription,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
                     )
-                    OutlinedTextField(
-                        value = urlInput,
-                        onValueChange = onUrlChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("订阅地址") },
-                        singleLine = true
-                    )
-                    Button(
-                        onClick = onAddSubscription,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = accent)
-                    ) {
-                        Text(text = "添加订阅")
-                    }
+                ) {
+                    Text(text = "添加订阅")
                 }
             }
         }
 
         if (subscriptions.items.isEmpty()) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "暂无订阅",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
+                SectionCard {
+                    Text(
+                        text = "暂无订阅，添加后可一键更新配置。",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         } else {
             items(subscriptions.items, key = { it.id }) { item ->
                 val selectedItem = subscriptions.selectedId == item.id
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (selectedItem) {
-                            accent.copy(alpha = 0.12f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    )
+                Surface(
+                    shape = CardShape,
+                    color = if (selectedItem) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    tonalElevation = 2.dp,
+                    shadowElevation = 6.dp
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = item.url,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = item.url,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (selectedItem) {
+                                TagChip(text = "已选中", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                         val updateText = item.lastUpdatedAt?.let {
                             "更新时间：${dateFormatter.format(Date(it))}"
                         } ?: "更新时间：-"
                         Text(
                             text = updateText,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (!item.lastError.isNullOrBlank()) {
                             Text(
                                 text = "错误：${item.lastError}",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.secondary
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                         Row(
@@ -536,11 +474,18 @@ private fun SubscriptionTab(
                             Button(
                                 onClick = { onSelectSubscription(item.id) },
                                 enabled = !selectedItem,
-                                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
                             ) {
                                 Text(text = if (selectedItem) "已选中" else "选择")
                             }
-                            OutlinedButton(onClick = { onRemoveSubscription(item.id) }) {
+                            TextButton(
+                                onClick = { onRemoveSubscription(item.id) },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
                                 Text(text = "删除")
                             }
                         }
@@ -548,176 +493,521 @@ private fun SubscriptionTab(
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(4.dp)) }
     }
 }
 
 @Composable
 private fun NodesTab(
+    modifier: Modifier,
     groups: List<OutboundGroupModel>,
-    accent: androidx.compose.ui.graphics.Color,
+    accent: Color,
     onSelectNode: (String, String) -> Unit,
     onTestNode: (String) -> Unit
 ) {
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "节点选择",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "请在连接后选择分组节点。",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
+            SectionCard {
+                SectionTitle(title = "节点选择", subtitle = "连接后可切换分组节点")
+                Text(
+                    text = "支持手动选择的分组会显示“可选择”标记。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
         if (groups.isEmpty()) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "暂无节点信息，请先更新订阅并连接。",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
+                SectionCard {
+                    Text(
+                        text = "暂无节点信息，请先更新订阅并建立连接。",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         } else {
             items(groups, key = { it.tag }) { group ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                Surface(
+                    shape = CardShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
+                    shadowElevation = 6.dp
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = group.tag,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "当前：${group.selected}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!group.selectable) {
-                            Text(
-                                text = "该组为自动策略，暂不支持手动选择。",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = group.tag,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "当前：${group.selected}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            TagChip(
+                                text = if (group.selectable) "可选择" else "自动策略",
+                                color = if (group.selectable) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                }
                             )
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!group.selectable) {
+                            Text(
+                                text = "该分组为自动策略，暂不支持手动选择。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             group.items.forEach { item ->
                                 val isSelected = group.selected == item.tag
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = item.tag,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        val delayText = item.delayMs?.let { "${it}ms" } ?: "未测速"
-                                        Text(
-                                            text = "延迟：$delayText",
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                        )
-                                        val testTime = item.lastTestAt?.let {
-                                            timeFormatter.format(Date(it))
-                                        } ?: "—"
-                                        Text(
-                                            text = "测速时间：$testTime",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                        )
-                                    }
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        OutlinedButton(onClick = { onTestNode(item.tag) }) {
-                                            Text(text = "测速")
-                                        }
-                                        Button(
-                                            onClick = { onSelectNode(group.tag, item.tag) },
-                                            enabled = group.selectable && !isSelected,
-                                            colors = ButtonDefaults.buttonColors(containerColor = accent)
-                                        ) {
-                                            Text(text = if (isSelected) "已选" else "选择")
-                                        }
-                                    }
-                                }
+                                NodeRow(
+                                    tag = item.tag,
+                                    delayMs = item.delayMs,
+                                    lastTestAt = item.lastTestAt,
+                                    isSelected = isSelected,
+                                    selectable = group.selectable,
+                                    accent = accent,
+                                    timeFormatter = timeFormatter,
+                                    onTestNode = { onTestNode(item.tag) },
+                                    onSelectNode = { onSelectNode(group.tag, item.tag) }
+                                )
                             }
                         }
                     }
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(4.dp)) }
     }
 }
 
 @Composable
-private fun StatusRow(color: androidx.compose.ui.graphics.Color, label: String) {
+private fun AppHeader(statusText: String, statusColor: Color) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "SingBox Windows",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "基于 sing-box 内核的移动代理",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            )
+        }
+        StatusPill(
+            label = statusText,
+            backgroundColor = statusColor.copy(alpha = 0.16f),
+            contentColor = statusColor
+        )
+    }
+}
+
+@Composable
+private fun TabSwitcher(
+    currentTab: MainTab,
+    highlightColor: Color,
+    onTabSelected: (MainTab) -> Unit
+) {
+    // 自定义分段控件，避免默认 TabRow 的拘谨感。
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        MainTab.entries.forEach { tab ->
+            val selected = currentTab == tab
+            val textColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (selected) highlightColor else Color.Transparent)
+                    .clickable { onTabSelected(tab) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = tab.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = textColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionHero(
+    statusText: String,
+    state: VpnState,
+    error: String?,
+    statusColor: Color,
+    actionText: String,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val pillText = when (state) {
+        VpnState.CONNECTED -> "在线"
+        VpnState.CONNECTING -> "连接中"
+        VpnState.ERROR -> "异常"
+        VpnState.IDLE -> "离线"
+    }
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = Color.Transparent,
+        shadowElevation = 12.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            statusColor.copy(alpha = 0.9f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
+                        )
+                    )
+                )
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "连接状态",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = onPrimary.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = onPrimary
+                    )
+                }
+                StatusPill(
+                    label = pillText,
+                    backgroundColor = onPrimary.copy(alpha = 0.18f),
+                    contentColor = onPrimary
+                )
+            }
+            Text(
+                text = "模式：VPN",
+                style = MaterialTheme.typography.bodyMedium,
+                color = onPrimary.copy(alpha = 0.85f)
+            )
+            if (!error.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = error,
+                        modifier = Modifier.padding(10.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = onPrimary
+                    )
+                }
+            }
+            Button(
+                onClick = {
+                    if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
+                        onDisconnect()
+                    } else {
+                        onConnect()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = onPrimary,
+                    contentColor = statusColor
+                ),
+                enabled = state != VpnState.CONNECTING
+            ) {
+                Text(text = actionText, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = CardShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 2.dp,
+        shadowElevation = 6.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun SectionTitle(
+    title: String,
+    subtitle: String? = null,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (trailing != null) {
+            Spacer(modifier = Modifier.size(12.dp))
+            trailing()
+        }
+    }
+}
+
+@Composable
+private fun MetricRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun MetricTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    highlight: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = if (highlight) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(
+    label: String,
+    backgroundColor: Color,
+    contentColor: Color
+) {
+    Surface(shape = PillShape, color = backgroundColor) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(contentColor)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun TagChip(text: String, color: Color) {
+    Surface(shape = PillShape, color = color.copy(alpha = 0.14f)) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = color
+        )
+    }
+}
+
+@Composable
+private fun InfoBanner(message: String) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
+    }
+}
+
+@Composable
+private fun NodeRow(
+    tag: String,
+    delayMs: Int?,
+    lastTestAt: Long?,
+    isSelected: Boolean,
+    selectable: Boolean,
+    accent: Color,
+    timeFormatter: SimpleDateFormat,
+    onTestNode: () -> Unit,
+    onSelectNode: () -> Unit
+) {
+    val delayText = delayMs?.let { "${it}ms" } ?: "未测速"
+    val testTime = lastTestAt?.let { timeFormatter.format(Date(it)) } ?: "—"
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (isSelected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = tag,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "延迟：$delayText",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "测速时间：$testTime",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onTestNode) {
+                    Text(text = "测速")
+                }
+                Button(
+                    onClick = onSelectNode,
+                    enabled = selectable && !isSelected,
+                    colors = ButtonDefaults.buttonColors(containerColor = accent)
+                ) {
+                    Text(text = if (isSelected) "已选" else "选择")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundOrnaments() {
+    Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(color)
+                .size(260.dp)
+                .offset(x = 160.dp, y = (-80).dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                            Color.Transparent
+                        )
+                    )
+                )
         )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
-
-@Composable
-private fun StatItem(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
+        Box(
+            modifier = Modifier
+                .size(320.dp)
+                .offset(x = (-140).dp, y = 360.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f),
+                            Color.Transparent
+                        )
+                    )
+                )
         )
     }
 }

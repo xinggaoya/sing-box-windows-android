@@ -11,33 +11,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Teal400,
-    secondary = Amber500,
-    tertiary = Moss500,
-    background = Ink900,
-    surface = Ink700,
-    onPrimary = Ink900,
-    onSecondary = Ink900,
-    onTertiary = Ink900,
-    onBackground = Sand100,
-    onSurface = Sand100,
-    surfaceVariant = Ink700,
-    onSurfaceVariant = Sand100
+    primary = Ocean400,
+    secondary = Coral400,
+    tertiary = Mint400,
+    background = Midnight950,
+    surface = Midnight900,
+    surfaceVariant = Midnight800,
+    onPrimary = Midnight950,
+    onSecondary = Midnight950,
+    onTertiary = Midnight950,
+    onBackground = Cloud050,
+    onSurface = Cloud050,
+    onSurfaceVariant = Cloud200,
+    error = Rose500,
+    onError = Midnight950
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Teal600,
-    secondary = Amber500,
-    tertiary = Moss500,
-    background = Sand050,
-    surface = Sand100,
-    surfaceVariant = Sand200,
-    onPrimary = Sand050,
-    onSecondary = Sand050,
-    onTertiary = Sand050,
-    onBackground = Ink900,
-    onSurface = Ink900,
-    onSurfaceVariant = Ink700
+    primary = Ocean600,
+    secondary = Coral500,
+    tertiary = Mint500,
+    background = Cloud050,
+    surface = Cloud000,
+    surfaceVariant = Cloud100,
+    onPrimary = Cloud000,
+    onSecondary = Cloud000,
+    onTertiary = Cloud000,
+    onBackground = Midnight900,
+    onSurface = Midnight900,
+    onSurfaceVariant = Midnight800,
+    error = Rose500,
+    onError = Cloud000
 )
 
 @Composable
