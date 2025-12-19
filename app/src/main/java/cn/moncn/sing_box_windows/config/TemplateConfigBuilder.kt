@@ -1,6 +1,5 @@
 package cn.moncn.sing_box_windows.config
 
-import cn.moncn.sing_box_windows.vpn.VpnDefaults
 import org.json.JSONArray
 import org.json.JSONObject
 import org.yaml.snakeyaml.Yaml
@@ -21,15 +20,19 @@ object TemplateConfigBuilder {
     private const val TAG_PROXY = "手动切换"
     private const val TAG_AUTO = "自动选择"
     private const val TAG_DIRECT = "direct"
-    private const val TAG_BLOCK = "block"
+    private const val TAG_LOCAL = "本地直连"
     private const val TAG_DNS_PROXY = "dns_proxy"
-    private const val TAG_DNS_CN = "dns_cn"
+    private const val TAG_DNS_DIRECT = "dns_direct"
     private const val TAG_DNS_RESOLVER = "dns_resolver"
-    private const val TAG_DNS_BLOCK = "dns_block"
+    private const val TAG_DNS_GOOGLE = "google"
     private const val TAG_TELEGRAM = "Telegram"
     private const val TAG_YOUTUBE = "YouTube"
-    private const val TAG_NETFLIX = "Netflix"
+    private const val TAG_NETFLIX = "netflix"
     private const val TAG_OPENAI = "OpenAI"
+    private const val TAG_APPLE = "Apple"
+    private const val TAG_GOOGLE = "Google"
+    private const val TAG_MICROSOFT = "Microsoft"
+    private const val TAG_GITHUB = "Github"
 
     fun buildFromSubscription(content: String): TemplateBuildResult {
         val trimmed = content.trim()
@@ -77,21 +80,23 @@ object TemplateConfigBuilder {
         return NodeParseResult(nodes, warnings)
     }
 
+    
     private fun buildTemplate(nodes: List<JSONObject>): String {
         val outbounds = JSONArray()
         val usedTags = linkedSetOf(
             TAG_DIRECT,
-            TAG_BLOCK,
+            TAG_LOCAL,
             TAG_PROXY,
             TAG_AUTO,
             TAG_TELEGRAM,
             TAG_YOUTUBE,
             TAG_NETFLIX,
-            TAG_OPENAI
+            TAG_OPENAI,
+            TAG_APPLE,
+            TAG_GOOGLE,
+            TAG_MICROSOFT,
+            TAG_GITHUB
         )
-
-        outbounds.put(JSONObject().put("type", "direct").put("tag", TAG_DIRECT))
-        outbounds.put(JSONObject().put("type", "block").put("tag", TAG_BLOCK))
 
         val normalizedNodes = nodes.mapIndexed { index, node ->
             val copied = JSONObject(node.toString())
@@ -100,12 +105,9 @@ object TemplateConfigBuilder {
             if (safeTag != originalTag) {
                 copied.put("tag", safeTag)
             }
-            ensureDomainResolver(copied)
             usedTags.add(safeTag)
             copied
         }
-
-        normalizedNodes.forEach { outbounds.put(it) }
 
         val nodeTags = normalizedNodes.map { it.optString("tag") }
 
@@ -113,55 +115,51 @@ object TemplateConfigBuilder {
             .put("type", "urltest")
             .put("tag", TAG_AUTO)
             .put("outbounds", JSONArray().apply { nodeTags.forEach { put(it) } })
-            .put("url", "http://cp.cloudflare.com/generate_204")
+            .put("url", "https://www.gstatic.com/generate_204")
             .put("interval", "3m")
             .put("tolerance", 50)
-            .put("idle_timeout", "10m")
-            .put("interrupt_exist_connections", true)
+            .put("interrupt_exist_connections", false)
         outbounds.put(autoGroup)
 
-        val proxyTags = JSONArray().apply {
-            put(TAG_AUTO)
-            nodeTags.forEach { put(it) }
-        }
         outbounds.put(
             JSONObject()
                 .put("type", "selector")
                 .put("tag", TAG_PROXY)
-                .put("outbounds", proxyTags)
-                .put("default", nodeTags.first())
+                .put("outbounds", JSONArray().apply { nodeTags.forEach { put(it) } })
         )
 
-        val serviceGroups = listOf(TAG_TELEGRAM, TAG_YOUTUBE, TAG_NETFLIX, TAG_OPENAI)
-        serviceGroups.forEach { tag ->
+        val serviceTags = listOf(TAG_TELEGRAM, TAG_YOUTUBE, TAG_NETFLIX, TAG_OPENAI)
+        serviceTags.forEach { tag ->
             outbounds.put(
                 JSONObject()
                     .put("type", "selector")
                     .put("tag", tag)
-                    .put("outbounds", JSONArray().put(TAG_PROXY).put(TAG_AUTO))
+                    .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = false))
             )
         }
 
-        // 使用 DoH + SNI 避免明文 DNS 污染，远端 DNS 走代理降低泄漏风险。
-        val dns = JSONObject()
-            .put("final", TAG_DNS_PROXY)
-            .put("independent_cache", true)
-            .put(
-                "rules",
-                JSONArray()
-                    .put(JSONObject().put("clash_mode", "direct").put("server", TAG_DNS_CN))
-                    .put(JSONObject().put("clash_mode", "global").put("server", TAG_DNS_PROXY))
-                    .put(JSONObject().put("rule_set", "geosite-category-ads-all").put("server", TAG_DNS_BLOCK))
-                    .put(
-                        JSONObject()
-                            .put(
-                                "rule_set",
-                                JSONArray().put("geosite-cn").put("geoip-cn")
-                            )
-                            .put("server", TAG_DNS_CN)
-                    )
-                    .put(JSONObject().put("rule_set", "geosite-geolocation-!cn").put("server", TAG_DNS_PROXY))
+        val directServiceTags = listOf(TAG_APPLE, TAG_GOOGLE, TAG_MICROSOFT, TAG_GITHUB)
+        directServiceTags.forEach { tag ->
+            outbounds.put(
+                JSONObject()
+                    .put("type", "selector")
+                    .put("tag", tag)
+                    .put("outbounds", buildServiceOutbounds(nodeTags, includeDirect = true))
             )
+        }
+
+        outbounds.put(
+            JSONObject()
+                .put("type", "selector")
+                .put("tag", TAG_LOCAL)
+                .put("outbounds", buildLocalOutbounds(nodeTags))
+                .put("default", TAG_DIRECT)
+        )
+
+        outbounds.put(JSONObject().put("type", "direct").put("tag", TAG_DIRECT))
+        normalizedNodes.forEach { outbounds.put(it) }
+
+        val dns = JSONObject()
             .put(
                 "servers",
                 JSONArray()
@@ -169,213 +167,333 @@ object TemplateConfigBuilder {
                         JSONObject()
                             .put("type", "https")
                             .put("server", "1.1.1.1")
+                            .put("server_port", 443)
                             .put("path", "/dns-query")
-                            .put("detour", TAG_PROXY)
                             .put("tag", TAG_DNS_PROXY)
-                            .put(
-                                "tls",
-                                JSONObject()
-                                    .put("enabled", true)
-                                    .put("server_name", "cloudflare-dns.com")
-                            )
+                            .put("detour", TAG_AUTO)
+                            .put("domain_resolver", TAG_DNS_RESOLVER)
                     )
                     .put(
                         JSONObject()
-                            .put("type", "https")
-                            .put("server", "223.5.5.5")
+                            .put("type", "h3")
+                            .put("server", "dns.alidns.com")
+                            .put("server_port", 443)
                             .put("path", "/dns-query")
-                            .put("tag", TAG_DNS_CN)
-                            .put(
-                                "tls",
-                                JSONObject()
-                                    .put("enabled", true)
-                                    .put("server_name", "dns.alidns.com")
-                            )
+                            .put("tag", TAG_DNS_DIRECT)
+                            .put("domain_resolver", TAG_DNS_RESOLVER)
                     )
                     .put(
                         JSONObject()
-                            .put("type", "https")
-                            .put("server", "223.5.5.5")
-                            .put("path", "/dns-query")
+                            .put("type", "tls")
+                            .put("server", "8.8.4.4")
+                            .put("tag", TAG_DNS_GOOGLE)
+                            .put("domain_resolver", TAG_DNS_RESOLVER)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("type", "udp")
+                            .put("server", "114.114.114.114")
                             .put("tag", TAG_DNS_RESOLVER)
-                            .put(
-                                "tls",
-                                JSONObject()
-                                    .put("enabled", true)
-                                    .put("server_name", "dns.alidns.com")
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("address", "rcode://success")
-                            .put("tag", TAG_DNS_BLOCK)
                     )
             )
-            .put("strategy", "prefer_ipv6")
+            .put(
+                "rules",
+                JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("action", "route")
+                            .put("clash_mode", "direct")
+                            .put("server", TAG_DNS_DIRECT)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("action", "route")
+                            .put("clash_mode", "global")
+                            .put("server", TAG_DNS_PROXY)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("action", "route")
+                            .put("rule_set", "geosite-cn")
+                            .put("server", TAG_DNS_DIRECT)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("action", "route")
+                            .put("rule_set", "geoip-cn")
+                            .put("server", TAG_DNS_DIRECT)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("action", "route")
+                            .put("rule_set", "geosite-geolocation-!cn")
+                            .put("server", TAG_DNS_PROXY)
+                    )
+            )
+            .put("independent_cache", true)
+            .put("strategy", "prefer_ipv4")
+            .put("final", TAG_DNS_DIRECT)
 
         val routeRules = JSONArray()
             .put(JSONObject().put("action", "sniff"))
-            .put(JSONObject().put("action", "hijack-dns").put("protocol", "dns"))
+            .put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
+            .put(JSONObject().put("ip_is_private", true).put("outbound", TAG_DIRECT))
             .put(JSONObject().put("clash_mode", "global").put("outbound", TAG_PROXY))
-            .put(JSONObject().put("clash_mode", "direct").put("outbound", TAG_DIRECT))
-            .put(JSONObject().put("action", "reject").put("rule_set", "geosite-category-ads-all"))
-            .put(JSONObject().put("outbound", TAG_TELEGRAM).put("rule_set", "geosite-telegram"))
-            .put(JSONObject().put("outbound", TAG_YOUTUBE).put("rule_set", "geosite-youtube"))
-            .put(JSONObject().put("outbound", TAG_NETFLIX).put("rule_set", "geosite-netflix"))
-            .put(JSONObject().put("outbound", TAG_OPENAI).put("rule_set", "geosite-openai"))
-            .put(JSONObject().put("outbound", TAG_DIRECT).put("rule_set", "geosite-private"))
+            .put(JSONObject().put("clash_mode", "direct").put("outbound", TAG_LOCAL))
+            .put(
+                JSONObject()
+                    .put("type", "logical")
+                    .put("mode", "or")
+                    .put(
+                        "rules",
+                        JSONArray()
+                            .put(JSONObject().put("rule_set", "geosite-category-ads-all"))
+                            .put(JSONObject().put("domain_regex", "^stun\\..+"))
+                            .put(JSONObject().put("domain_keyword", JSONArray().put("stun").put("httpdns")))
+                            .put(JSONObject().put("protocol", "stun"))
+                    )
+                    .put("action", "reject")
+                    .put("method", "default")
+                    .put("no_drop", false)
+            )
+            .put(
+                JSONObject()
+                    .put("rule_set", JSONArray().put("geosite-telegram").put("geoip-telegram"))
+                    .put("outbound", TAG_TELEGRAM)
+            )
+            .put(JSONObject().put("rule_set", "geosite-youtube").put("outbound", TAG_YOUTUBE))
+            .put(
+                JSONObject()
+                    .put("rule_set", JSONArray().put("geosite-netflix").put("geoip-netflix"))
+                    .put("outbound", TAG_NETFLIX)
+            )
+            .put(
+                JSONObject()
+                    .put("rule_set", "geosite-openai@ads")
+                    .put("action", "reject")
+                    .put("method", "default")
+                    .put("no_drop", false)
+            )
+            .put(JSONObject().put("rule_set", "geosite-openai").put("outbound", TAG_OPENAI))
+            .put(JSONObject().put("rule_set", "geosite-apple").put("outbound", TAG_APPLE))
+            .put(
+                JSONObject()
+                    .put("rule_set", JSONArray().put("geosite-google").put("geoip-google"))
+                    .put("outbound", TAG_GOOGLE)
+            )
+            .put(JSONObject().put("rule_set", "geosite-microsoft").put("outbound", TAG_MICROSOFT))
+            .put(JSONObject().put("rule_set", "geosite-github").put("outbound", TAG_GITHUB))
+            .put(JSONObject().put("rule_set", "geosite-geolocation-!cn").put("outbound", TAG_PROXY))
             .put(
                 JSONObject()
                     .put(
-                        "ip_cidr",
+                        "rule_set",
                         JSONArray()
-                            .put("10.0.0.0/8")
-                            .put("100.64.0.0/10")
-                            .put("127.0.0.0/8")
-                            .put("169.254.0.0/16")
-                            .put("172.16.0.0/12")
-                            .put("192.168.0.0/16")
-                            .put("::1/128")
-                            .put("fc00::/7")
-                            .put("fe80::/10")
+                            .put("geosite-private")
+                            .put("geosite-cn")
+                            .put("geoip-private")
+                            .put("geoip-cn")
                     )
-                    .put("outbound", TAG_DIRECT)
+                    .put("outbound", TAG_LOCAL)
             )
-            .put(
-                JSONObject()
-                    .put("outbound", TAG_DIRECT)
-                    .put("rule_set", JSONArray().put("geosite-cn").put("geoip-cn"))
-            )
-            .put(JSONObject().put("outbound", TAG_PROXY).put("rule_set", "geosite-geolocation-!cn"))
 
         val route = JSONObject()
             .put("rules", routeRules)
-            .put("final", TAG_PROXY)
+            .put("final", TAG_LOCAL)
             .put("auto_detect_interface", true)
-            .put("default_domain_resolver", TAG_DNS_RESOLVER)
+            .put(
+                "default_domain_resolver",
+                JSONObject()
+                    .put("server", TAG_DNS_RESOLVER)
+                    .put("strategy", "prefer_ipv4")
+            )
             .put(
                 "rule_set",
                 JSONArray()
                     .put(
                         JSONObject()
-                            .put("type", "remote")
                             .put("tag", "geosite-category-ads-all")
+                            .put("type", "remote")
                             .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-all.srs")
                             .put("update_interval", "1d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
-                            )
                     )
                     .put(
                         JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geosite-cn")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "1d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geosite-geolocation-!cn")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "1d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
                             .put("tag", "geosite-telegram")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "7d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
                             .put("type", "remote")
-                            .put("tag", "geosite-youtube")
                             .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "7d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-youtube.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geosite-netflix")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "7d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geosite-openai")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "7d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geosite-private")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
-                            .put("update_interval", "7d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-private.srs"
-                            )
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "remote")
-                            .put("tag", "geoip-cn")
-                            .put("format", "binary")
-                            .put("download_detour", TAG_PROXY)
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/telegram.srs")
                             .put("update_interval", "1d")
-                            .put(
-                                "url",
-                                "https://gh-proxy.com/https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
-                            )
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geoip-telegram")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/telegram.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-youtube")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/youtube.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-netflix")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/netflix.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geoip-netflix")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/netflix.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-openai@ads")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/openai@ads.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-openai")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/openai.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-apple")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/apple.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-google")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geoip-google")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-microsoft")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/microsoft.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-geolocation-!cn")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/geolocation-!cn.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-github")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-private")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/private.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geosite-cn")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/cn.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geoip-private")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/private.srs")
+                            .put("update_interval", "1d")
+                    )
+                    .put(
+                        JSONObject()
+                            .put("tag", "geoip-cn")
+                            .put("type", "remote")
+                            .put("format", "binary")
+                            .put("url", "https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs")
+                            .put("update_interval", "1d")
                     )
             )
 
         val inbound = JSONObject()
             .put("type", "tun")
             .put("tag", "tun-in")
-            .put("mtu", VpnDefaults.MTU)
-            .put("address", JSONArray().put("${VpnDefaults.ADDRESS}/${VpnDefaults.PREFIX}"))
+            .put(
+                "address",
+                JSONArray()
+                    .put("172.18.0.1/30")
+                    .put("fdfe:dcba:9876::1/126")
+            )
+            .put("mtu", 9000)
             .put("auto_route", true)
             .put("strict_route", true)
             .put("stack", "system")
             .put("sniff", true)
-            .put("sniff_override_destination", true)
+            .put(
+                "platform",
+                JSONObject()
+                    .put(
+                        "http_proxy",
+                        JSONObject()
+                            .put("enabled", true)
+                            .put("server", "127.0.0.1")
+                            .put("server_port", 1082)
+                    )
+            )
+
+        val mixedInbound = JSONObject()
+            .put("type", "mixed")
+            .put("listen", "127.0.0.1")
+            .put("listen_port", 1082)
+            .put("sniff", true)
+            .put("users", JSONArray())
+
+        val socksInbound = JSONObject()
+            .put("type", "socks")
+            .put("tag", "socks-in")
+            .put("listen", "127.0.0.1")
+            .put("listen_port", 7888)
 
         val config = JSONObject()
             .put(
@@ -386,7 +504,7 @@ object TemplateConfigBuilder {
                     .put("timestamp", true)
             )
             .put("dns", dns)
-            .put("inbounds", JSONArray().put(inbound))
+            .put("inbounds", JSONArray().put(inbound).put(mixedInbound).put(socksInbound))
             .put("outbounds", outbounds)
             .put("route", route)
             .put(
@@ -401,17 +519,37 @@ object TemplateConfigBuilder {
                         "clash_api",
                         JSONObject()
                             .put("default_mode", "rule")
-                            .put("external_controller", "127.0.0.1:12081")
+                            .put("external_controller", "127.0.0.1:9090")
                             .put("external_ui", "metacubexd")
-                            .put("external_ui_download_detour", TAG_PROXY)
+                            .put("external_ui_download_detour", TAG_DIRECT)
                             .put(
                                 "external_ui_download_url",
-                                "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+                                "https://gh-proxy.com/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
                             )
                     )
             )
 
         return config.toString(2)
+    }
+
+    private fun buildServiceOutbounds(nodeTags: List<String>, includeDirect: Boolean): JSONArray {
+        val outbounds = JSONArray()
+        outbounds.put(TAG_PROXY)
+        outbounds.put(TAG_AUTO)
+        if (includeDirect) {
+            outbounds.put(TAG_DIRECT)
+        }
+        nodeTags.forEach { outbounds.put(it) }
+        return outbounds
+    }
+
+    private fun buildLocalOutbounds(nodeTags: List<String>): JSONArray {
+        val outbounds = JSONArray()
+        outbounds.put(TAG_DIRECT)
+        outbounds.put(TAG_PROXY)
+        outbounds.put(TAG_AUTO)
+        nodeTags.forEach { outbounds.put(it) }
+        return outbounds
     }
 
     private fun readMapList(value: Any?): List<Map<*, *>> {
@@ -579,30 +717,6 @@ object TemplateConfigBuilder {
 
     private fun isGroupOrSystemOutbound(type: String): Boolean {
         return type in setOf("direct", "block", "dns", "selector", "urltest", "fallback")
-    }
-
-    private fun ensureDomainResolver(outbound: JSONObject) {
-        if (outbound.has("domain_resolver")) {
-            return
-        }
-        val server = outbound.optString("server")
-        if (server.isBlank() || looksLikeIp(server)) {
-            return
-        }
-        outbound.put(
-            "domain_resolver",
-            JSONObject()
-                .put("server", TAG_DNS_RESOLVER)
-                .put("strategy", "ipv4_only")
-        )
-    }
-
-    private fun looksLikeIp(host: String): Boolean {
-        val ipv4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
-        if (ipv4.matches(host)) {
-            return true
-        }
-        return host.count { it == ':' } >= 2
     }
 
     private fun uniqueTag(base: String, existing: MutableSet<String>): String {

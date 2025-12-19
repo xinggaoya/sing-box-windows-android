@@ -5,11 +5,14 @@ import android.net.Uri
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.util.UUID
+import java.util.zip.GZIPInputStream
 
 data class SubscriptionItem(
     val id: String,
@@ -199,7 +202,7 @@ object SubscriptionRepository {
         if (body.isBlank()) {
             throw IOException("订阅内容为空")
         }
-        return decodeIfBase64(body)
+        return decodeSubscriptionBody(body)
     }
 
     private fun decodeIfBase64(raw: String): String {
@@ -210,8 +213,21 @@ object SubscriptionRepository {
         if (!looksLikeBase64(trimmed)) {
             return raw
         }
-        val decoded = decodeBase64(trimmed) ?: return raw
-        return if (isLikelyYaml(decoded) || isLikelyJson(decoded)) decoded else raw
+        val decodedBytes = decodeBase64(trimmed) ?: return raw
+        val decodedText = decodedBytes.toString(Charsets.UTF_8)
+        if (isLikelyYaml(decodedText) || isLikelyJson(decodedText)) {
+            return decodedText
+        }
+        val decompressed = tryDecompress(decodedBytes)
+        if (!decompressed.isNullOrBlank() && (isLikelyYaml(decompressed) || isLikelyJson(decompressed))) {
+            return decompressed
+        }
+        return raw
+    }
+
+    private fun decodeSubscriptionBody(raw: String): String {
+        val decoded = decodeIfBase64(raw)
+        return convertProxyUriListToJson(decoded) ?: decoded
     }
 
     private fun looksLikeBase64(text: String): Boolean {
@@ -226,14 +242,20 @@ object SubscriptionRepository {
         return base64Regex.matches(normalized)
     }
 
-    private fun decodeBase64(text: String): String? {
+    private fun decodeBase64(text: String): ByteArray? {
         val normalized = text.replace("\n", "").replace("\r", "")
         return runCatching {
-            val decoded = Base64.decode(normalized, Base64.NO_WRAP)
-            String(decoded, Charsets.UTF_8)
+            Base64.decode(normalized, Base64.NO_WRAP)
         }.getOrNull() ?: runCatching {
-            val decoded = Base64.decode(normalized, Base64.NO_WRAP or Base64.URL_SAFE)
-            String(decoded, Charsets.UTF_8)
+            Base64.decode(normalized, Base64.NO_WRAP or Base64.URL_SAFE)
+        }.getOrNull()
+    }
+
+    private fun tryDecompress(bytes: ByteArray): String? {
+        return runCatching {
+            GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader(Charsets.UTF_8).use {
+                it.readText()
+            }
         }.getOrNull()
     }
 
@@ -261,5 +283,161 @@ object SubscriptionRepository {
             return false
         }
         return sample.contains("\"outbounds\"") || sample.contains("\"inbounds\"")
+    }
+
+    private fun convertProxyUriListToJson(content: String): String? {
+        val lines = content.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+        if (lines.isEmpty()) {
+            return null
+        }
+        val proxies = mutableListOf<JSONObject>()
+        lines.forEachIndexed { index, line ->
+            parseProxyUri(line, "节点 ${index + 1}")?.let { proxies.add(it) }
+        }
+        if (proxies.isEmpty()) {
+            return null
+        }
+        val array = JSONArray()
+        proxies.forEach { array.put(it) }
+        return JSONObject().put("proxies", array).toString()
+    }
+
+    private fun parseProxyUri(line: String, fallbackName: String): JSONObject? {
+        return when {
+            line.startsWith("trojan://", ignoreCase = true) -> parseTrojanUri(line, fallbackName)
+            line.startsWith("vmess://", ignoreCase = true) -> parseVmessUri(line, fallbackName)
+            else -> null
+        }
+    }
+
+    private fun parseTrojanUri(line: String, fallbackName: String): JSONObject? {
+        val withoutScheme = line.substringAfter("://")
+        val fragment = line.substringAfter("#", "")
+        val name = fragment.takeIf { it.isNotBlank() } ?: fallbackName
+        val withoutFragment = withoutScheme.substringBefore("#")
+        val hostPart = withoutFragment.substringBefore("?")
+        val queryPart = withoutFragment.substringAfter("?", "")
+        val atIndex = hostPart.indexOf('@')
+        if (atIndex <= 0) {
+            return null
+        }
+        val password = hostPart.substring(0, atIndex)
+        val hostPort = hostPart.substring(atIndex + 1)
+        val (host, port) = splitHostPort(hostPort, 443)
+        val queryMap = parseQueryParameters(queryPart)
+        val tls = JSONObject().put("enabled", true)
+        queryMap["sni"]?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+        queryMap["alpn"]?.takeIf { it.isNotBlank() }?.let { value ->
+            val list = value.split(",").mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
+            if (list.isNotEmpty()) {
+                val alpnArray = JSONArray()
+                list.forEach { alpnArray.put(it) }
+                tls.put("alpn", alpnArray)
+            }
+        }
+        val node = JSONObject()
+            .put("type", "trojan")
+            .put("tag", name)
+            .put("server", host)
+            .put("server_port", port)
+            .put("password", password)
+            .put("tls", tls)
+        queryMap["sni"]?.takeIf { it.isNotBlank() }?.let { node.put("sni", it) }
+        parseBoolean(queryMap["allowInsecure"])?.let { node.put("insecure", it) }
+        return node
+    }
+
+    private fun parseVmessUri(line: String, fallbackName: String): JSONObject? {
+        val payload = line.substringAfter("://")
+        val fragment = payload.substringAfter("#", "")
+        val encoded = payload.substringBefore("#")
+        val decodedBytes = decodeBase64(encoded) ?: return null
+        val jsonText = decodedBytes.toString(Charsets.UTF_8)
+        val root = JSONObject(jsonText)
+        val name = fragment.takeIf { it.isNotBlank() }
+            ?: root.optString("ps").takeIf { it.isNotBlank() }
+            ?: fallbackName
+        val node = JSONObject()
+            .put("type", "vmess")
+            .put("tag", name)
+            .put("server", root.optString("add"))
+            .put("server_port", root.optInt("port", 0))
+            .put("uuid", root.optString("id"))
+        root.optString("cipher")?.takeIf { it.isNotBlank() }?.let { node.put("security", it) }
+        root.optInt("aid", 0).takeIf { it > 0 }?.let { node.put("alter_id", it) }
+        if (root.optString("tls").equals("tls", true)) {
+            val tls = JSONObject().put("enabled", true)
+            root.optString("sni")?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+            node.put("tls", tls)
+        }
+        when (root.optString("net")) {
+            "ws" -> {
+                val transport = JSONObject().put("type", "ws")
+                transport.put("path", root.optString("path", "/"))
+                root.optString("host")?.takeIf { it.isNotBlank() }?.let { host ->
+                    transport.put("headers", JSONObject().put("Host", host))
+                }
+                node.put("transport", transport)
+            }
+            "grpc" -> {
+                val transport = JSONObject().put("type", "grpc")
+                    .put("service_name", root.optString("path", ""))
+                node.put("transport", transport)
+            }
+        }
+        return node
+    }
+
+    private fun splitHostPort(value: String, defaultPort: Int): Pair<String, Int> {
+        if (value.startsWith("[")) {
+            val end = value.indexOf(']')
+            if (end > 0) {
+                val host = value.substring(1, end)
+                val portStr = value.substringAfter("]:", "")
+                val port = portStr.toIntOrNull() ?: defaultPort
+                return host to port
+            }
+            return value to defaultPort
+        }
+        val colonIndex = value.lastIndexOf(':')
+        if (colonIndex > 0 && colonIndex < value.length - 1) {
+            val host = value.substring(0, colonIndex)
+            val port = value.substring(colonIndex + 1).toIntOrNull() ?: defaultPort
+            return host to port
+        }
+        return value to defaultPort
+    }
+
+    private fun parseQueryParameters(query: String?): Map<String, String> {
+        if (query.isNullOrBlank()) {
+            return emptyMap()
+        }
+        return query.split("&").mapNotNull { part ->
+            val idx = part.indexOf('=')
+            if (idx >= 0) {
+                val key = decodeUriComponent(part.substring(0, idx))
+                val value = decodeUriComponent(part.substring(idx + 1))
+                key to value
+            } else {
+                val key = decodeUriComponent(part)
+                key to ""
+            }
+        }.toMap()
+    }
+
+    private fun decodeUriComponent(value: String): String {
+        return runCatching { URLDecoder.decode(value, "UTF-8") }.getOrNull() ?: value
+    }
+
+    private fun parseBoolean(value: String?): Boolean? {
+        if (value.isNullOrBlank()) return null
+        return when (value.lowercase()) {
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> null
+        }
     }
 }

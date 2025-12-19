@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.net.ProxyInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import androidx.core.app.NotificationCompat
 import cn.moncn.sing_box_windows.MainActivity
@@ -142,6 +144,8 @@ class AppVpnService : android.net.VpnService() {
         }
 
         var routeCount = 0
+        routeCount += addRoutes(builder, options.inet4RouteAddress)
+        routeCount += addRoutes(builder, options.inet6RouteAddress)
         routeCount += addRoutes(builder, options.inet4RouteRange)
         routeCount += addRoutes(builder, options.inet6RouteRange)
         if (routeCount == 0) {
@@ -149,8 +153,10 @@ class AppVpnService : android.net.VpnService() {
             builder.addRoute("::", 0)
         }
 
+        logRouteExcludes(options)
         applyPackageRules(builder, options)
         applyHttpProxy(builder, options)
+        applyUnderlyingNetworks(builder)
 
         vpnInterface = builder.establish()
         if (vpnInterface == null) {
@@ -184,6 +190,21 @@ class AppVpnService : android.net.VpnService() {
         return count
     }
 
+    private fun logRouteExcludes(options: TunOptions) {
+        val entries = mutableListOf<String>()
+        val ipv4 = options.inet4RouteExcludeAddress
+        while (ipv4.hasNext()) {
+            entries.add(ipv4.next().string())
+        }
+        val ipv6 = options.inet6RouteExcludeAddress
+        while (ipv6.hasNext()) {
+            entries.add(ipv6.next().string())
+        }
+        if (entries.isNotEmpty()) {
+            Log.i("AppVpnService", "route excludes: ${entries.joinToString()}")
+        }
+    }
+
     private fun applyPackageRules(builder: Builder, options: TunOptions) {
         val include = options.includePackage
         if (include.hasNext()) {
@@ -193,6 +214,10 @@ class AppVpnService : android.net.VpnService() {
             }
             return
         }
+
+        // 排除自身进程，避免核心连接被 VPN 回环捕获导致无法联网。
+        runCatching { builder.addDisallowedApplication(packageName) }
+            .onFailure { Log.w("AppVpnService", "disallow self failed", it) }
 
         val exclude = options.excludePackage
         while (exclude.hasNext()) {
@@ -219,6 +244,17 @@ class AppVpnService : android.net.VpnService() {
 
         val proxy = ProxyInfo.buildDirectProxy(host, port, bypass)
         builder.setHttpProxy(proxy)
+    }
+
+    private fun applyUnderlyingNetworks(builder: Builder) {
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        val networks = connectivity.allNetworks.filter { network ->
+            val caps = connectivity.getNetworkCapabilities(network) ?: return@filter false
+            !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+        if (networks.isNotEmpty()) {
+            builder.setUnderlyingNetworks(networks.toTypedArray())
+        }
     }
 
     companion object {
