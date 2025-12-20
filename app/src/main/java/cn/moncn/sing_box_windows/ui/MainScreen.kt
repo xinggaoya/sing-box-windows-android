@@ -33,7 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,6 +54,7 @@ import androidx.core.view.WindowInsetsCompat
 import cn.moncn.sing_box_windows.config.SubscriptionItem
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.core.CoreStatus
+import cn.moncn.sing_box_windows.core.OutboundItemModel
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
 import cn.moncn.sing_box_windows.ui.theme.Amber500
 import cn.moncn.sing_box_windows.ui.theme.Mint500
@@ -656,6 +659,31 @@ private fun NodesTab(
     onTestNode: (String) -> Unit
 ) {
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
+    val expandedGroups = remember { mutableStateMapOf<String, Boolean>() }
+    val expandedSnapshot = expandedGroups.toMap()
+    val listItems = remember(groups, expandedSnapshot) {
+        val items = mutableListOf<NodeListItem>()
+        groups.forEach { group ->
+            items.add(NodeListItem.GroupHeader(group))
+            if (expandedSnapshot[group.tag] == true) {
+                group.items.forEach { item ->
+                    items.add(NodeListItem.Node(group, item))
+                }
+            }
+        }
+        items
+    }
+
+    LaunchedEffect(groups) {
+        val existingTags = groups.map { it.tag }.toSet()
+        expandedGroups.keys.filter { it !in existingTags }.forEach { expandedGroups.remove(it) }
+        groups.forEachIndexed { index, group ->
+            if (!expandedGroups.containsKey(group.tag)) {
+                expandedGroups[group.tag] = index == 0
+            }
+        }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 12.dp),
@@ -683,69 +711,121 @@ private fun NodesTab(
                 }
             }
         } else {
-            items(groups, key = { it.tag }) { group ->
-                Surface(
-                    shape = CardShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 2.dp,
-                    shadowElevation = 6.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = group.tag,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "当前：${group.selected}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+            items(listItems, key = { it.key }) { item ->
+                when (item) {
+                    is NodeListItem.GroupHeader -> {
+                        val group = item.group
+                        val expanded = expandedGroups[group.tag] == true
+                        NodeGroupHeader(
+                            group = group,
+                            expanded = expanded,
+                            accent = accent,
+                            onToggle = {
+                                expandedGroups[group.tag] = !(expandedGroups[group.tag] ?: false)
                             }
-                            TagChip(
-                                text = if (group.selectable) "可选择" else "自动策略",
-                                color = if (group.selectable) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.secondary
-                                }
-                            )
-                        }
-                        if (!group.selectable) {
-                            Text(
-                                text = "该分组为自动策略，暂不支持手动选择。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            group.items.forEach { item ->
-                                val isSelected = group.selected == item.tag
-                                NodeRow(
-                                    tag = item.tag,
-                                    delayMs = item.delayMs,
-                                    lastTestAt = item.lastTestAt,
-                                    isSelected = isSelected,
-                                    selectable = group.selectable,
-                                    accent = accent,
-                                    timeFormatter = timeFormatter,
-                                    onTestNode = { onTestNode(item.tag) },
-                                    onSelectNode = { onSelectNode(group.tag, item.tag) }
-                                )
-                            }
-                        }
+                        )
                     }
+                    is NodeListItem.Node -> {
+                        val group = item.group
+                        val node = item.node
+                        val isSelected = group.selected == node.tag
+                        NodeRow(
+                            tag = node.tag,
+                            delayMs = node.delayMs,
+                            lastTestAt = node.lastTestAt,
+                            isSelected = isSelected,
+                            isTesting = node.isTesting,
+                            selectable = group.selectable,
+                            accent = accent,
+                            timeFormatter = timeFormatter,
+                            onTestNode = { onTestNode(node.tag) },
+                            onSelectNode = { onSelectNode(group.tag, node.tag) },
+                            modifier = Modifier.padding(start = 12.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface NodeListItem {
+    val key: String
+
+    data class GroupHeader(val group: OutboundGroupModel) : NodeListItem {
+        override val key: String = "group-${group.tag}"
+    }
+
+    data class Node(val group: OutboundGroupModel, val node: OutboundItemModel) : NodeListItem {
+        override val key: String = "node-${group.tag}-${node.tag}"
+    }
+}
+
+@Composable
+private fun NodeGroupHeader(
+    group: OutboundGroupModel,
+    expanded: Boolean,
+    accent: Color,
+    onToggle: () -> Unit
+) {
+    val typeLabel = when (group.type) {
+        "urltest" -> "自动测速"
+        "selector" -> "手动选择"
+        "fallback" -> "故障转移"
+        else -> "策略分组"
+    }
+    val typeColor = when (group.type) {
+        "urltest" -> MaterialTheme.colorScheme.tertiary
+        "selector" -> accent
+        "fallback" -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val selectableLabel = if (group.selectable) "可选择" else "自动策略"
+    val selectableColor = if (group.selectable) accent else MaterialTheme.colorScheme.secondary
+
+    Surface(
+        shape = CardShape,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.tag,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "当前：${group.selected}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "节点数：${group.items.size}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TagChip(text = typeLabel, color = typeColor)
+                    TagChip(text = selectableLabel, color = selectableColor)
+                }
+                TextButton(onClick = onToggle) {
+                    Text(text = if (expanded) "收起" else "展开")
                 }
             }
         }
@@ -1223,17 +1303,21 @@ private fun NodeRow(
     delayMs: Int?,
     lastTestAt: Long?,
     isSelected: Boolean,
+    isTesting: Boolean,
     selectable: Boolean,
     accent: Color,
     timeFormatter: SimpleDateFormat,
     onTestNode: () -> Unit,
-    onSelectNode: () -> Unit
+    onSelectNode: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val delayText = delayMs?.let { "${it}ms" } ?: "未测速"
     val testTime = lastTestAt?.let { timeFormatter.format(Date(it)) } ?: "—"
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = if (isSelected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant
+        color = if (isSelected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier.fillMaxWidth(),
+        tonalElevation = if (isSelected) 2.dp else 0.dp
     ) {
         Row(
             modifier = Modifier
@@ -1265,8 +1349,11 @@ private fun NodeRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = onTestNode) {
-                    Text(text = "测速")
+                OutlinedButton(
+                    onClick = onTestNode,
+                    enabled = !isTesting
+                ) {
+                    Text(text = if (isTesting) "测速中..." else "测速")
                 }
                 Button(
                     onClick = onSelectNode,

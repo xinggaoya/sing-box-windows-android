@@ -18,7 +18,8 @@ data class OutboundItemModel(
     val tag: String,
     val type: String,
     val delayMs: Int?,
-    val lastTestAt: Long?
+    val lastTestAt: Long?,
+    val isTesting: Boolean = false
 )
 
 data class OutboundGroupModel(
@@ -33,9 +34,21 @@ object OutboundGroupManager {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var client: CommandClient? = null
     private var urlTestClient: CommandClient? = null
+    private var lastTestSnapshot: Map<String, TestSnapshot> = emptyMap()
+    private var testingTags by mutableStateOf<Map<String, TestingState>>(emptyMap())
 
     var groups by mutableStateOf<List<OutboundGroupModel>>(emptyList())
         private set
+
+    data class TestSnapshot(
+        val delayMs: Int?,
+        val lastTestAt: Long?
+    )
+
+    data class TestingState(
+        val baseline: TestSnapshot?,
+        val startedAt: Long
+    )
 
     private val handler = object : CommandClientHandler {
         override fun connected() = Unit
@@ -85,7 +98,24 @@ object OutboundGroupManager {
                     )
                 )
             }
-            mainHandler.post { groups = groupList }
+            val snapshot = buildTestSnapshot(groupList)
+            val updatedTesting = testingTags.filterNot { (tag, state) ->
+                val current = snapshot[tag]
+                current != null && current != state.baseline
+            }
+            val normalizedGroups = normalizeTestResults(groupList, snapshot)
+            val testingSet = updatedTesting.keys
+            val displayedGroups = normalizedGroups.map { group ->
+                val updatedItems = group.items.map { item ->
+                    item.copy(isTesting = testingSet.contains(item.tag))
+                }
+                group.copy(items = updatedItems)
+            }
+            mainHandler.post {
+                lastTestSnapshot = snapshot
+                testingTags = updatedTesting
+                groups = displayedGroups
+            }
         }
     }
 
@@ -97,6 +127,7 @@ object OutboundGroupManager {
         }
         client = Libbox.newCommandClient(handler, options)
         runCatching { client?.connect() }
+        ensureUrlTestClient()
     }
 
     fun stop() {
@@ -122,9 +153,22 @@ object OutboundGroupManager {
         runCatching { client?.closeConnections() }
     }
 
-    fun urlTest(outboundTag: String) {
+    fun urlTest(outboundTag: String): Result<Unit> {
+        if (client == null) {
+            return Result.failure(IllegalStateException("核心未运行"))
+        }
+        val group = findUrlTestGroup(outboundTag)
+            ?: return Result.failure(IllegalStateException("当前配置没有可测速的分组"))
         ensureUrlTestClient()
-        runCatching { urlTestClient?.urlTest(outboundTag) }
+        val result = runCatching {
+            urlTestClient?.urlTest(group.tag) ?: error("测速通道不可用")
+        }.recoverCatching {
+            client?.urlTest(group.tag) ?: error("测速通道不可用")
+        }
+        if (result.isSuccess) {
+            markTesting(outboundTag)
+        }
+        return result
     }
 
     private fun ensureUrlTestClient() {
@@ -146,5 +190,68 @@ object OutboundGroupManager {
         }
         urlTestClient = Libbox.newCommandClient(emptyHandler, options)
         runCatching { urlTestClient?.connect() }
+    }
+
+    private fun findUrlTestGroup(outboundTag: String): OutboundGroupModel? {
+        return groups.firstOrNull { group ->
+            group.type == "urltest" && group.items.any { it.tag == outboundTag }
+        } ?: groups.firstOrNull { it.type == "urltest" }
+    }
+
+    private fun buildTestSnapshot(
+        groupList: List<OutboundGroupModel>
+    ): Map<String, TestSnapshot> {
+        val snapshot = mutableMapOf<String, TestSnapshot>()
+        groupList.forEach { group ->
+            group.items.forEach { item ->
+                if (item.delayMs == null && item.lastTestAt == null) return@forEach
+                val current = snapshot[item.tag]
+                if (current == null || (item.lastTestAt ?: 0L) > (current.lastTestAt ?: 0L)) {
+                    snapshot[item.tag] = TestSnapshot(item.delayMs, item.lastTestAt)
+                }
+            }
+        }
+        return snapshot
+    }
+
+    private fun normalizeTestResults(
+        groupList: List<OutboundGroupModel>,
+        snapshot: Map<String, TestSnapshot>
+    ): List<OutboundGroupModel> {
+        return groupList.map { group ->
+            val items = group.items.map { item ->
+                val resolved = snapshot[item.tag]
+                val delayMs = item.delayMs ?: resolved?.delayMs
+                val lastTestAt = item.lastTestAt ?: resolved?.lastTestAt
+                item.copy(delayMs = delayMs, lastTestAt = lastTestAt)
+            }
+            group.copy(items = items)
+        }
+    }
+
+    private fun markTesting(tag: String) {
+        val baseline = lastTestSnapshot[tag]
+        val startedAt = System.currentTimeMillis()
+        testingTags = testingTags + (tag to TestingState(baseline, startedAt))
+        refreshTestingState()
+        mainHandler.postDelayed({
+            val current = testingTags[tag] ?: return@postDelayed
+            if (current.startedAt == startedAt) {
+                testingTags = testingTags - tag
+                refreshTestingState()
+            }
+        }, 15_000)
+    }
+
+    private fun refreshTestingState() {
+        val testingSet = testingTags.keys
+        mainHandler.post {
+            groups = groups.map { group ->
+                val items = group.items.map { item ->
+                    item.copy(isTesting = testingSet.contains(item.tag))
+                }
+                group.copy(items = items)
+            }
+        }
     }
 }

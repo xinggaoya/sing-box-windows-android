@@ -314,7 +314,18 @@ class MainActivity : ComponentActivity() {
                     },
                     onTestNode = { outboundTag ->
                         scope.launch {
-                            OutboundGroupManager.urlTest(outboundTag)
+                            val result = OutboundGroupManager.urlTest(outboundTag)
+                            val errorMessage = result.exceptionOrNull()?.message
+                            if (!errorMessage.isNullOrBlank()) {
+                                val message = when {
+                                    errorMessage.contains("核心未运行") -> "请先建立连接后再测速。"
+                                    errorMessage.contains("可测速的分组") -> "当前配置没有可测速的分组，请先更新订阅。"
+                                    errorMessage.contains("outbound is not a group") ->
+                                        "当前节点不在可测速分组中，请在“自动测速”分组内重试。"
+                                    else -> errorMessage
+                                }
+                                showMessage("测速失败", message, MessageTone.Error)
+                            }
                         }
                     })
             }
