@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.net.ProxyInfo
 import android.net.ConnectivityManager
@@ -17,16 +19,26 @@ import androidx.core.app.NotificationCompat
 import cn.moncn.sing_box_windows.MainActivity
 import cn.moncn.sing_box_windows.R
 import cn.moncn.sing_box_windows.config.ConfigRepository
+import cn.moncn.sing_box_windows.core.CoreStartResult
 import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.SingBoxEngine
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import io.nekohasekai.libbox.RoutePrefixIterator
 import io.nekohasekai.libbox.TunOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AppVpnService : android.net.VpnService() {
     private var vpnInterface: android.os.ParcelFileDescriptor? = null
     private val platform by lazy { PlatformInterfaceBridge(this, this) }
     val wifiManager: WifiManager? by lazy { getSystemService(WifiManager::class.java) }
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val isStarting = AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? {
         return super.onBind(intent)
@@ -38,6 +50,11 @@ class AppVpnService : android.net.VpnService() {
         DefaultNetworkMonitor.initialize(this)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startTunnel()
@@ -47,7 +64,10 @@ class AppVpnService : android.net.VpnService() {
     }
 
     private fun startTunnel() {
-        if (vpnInterface != null || SingBoxEngine.isRunning()) {
+        if (vpnInterface != null || SingBoxEngine.isRunning() || isStarting.get()) {
+            return
+        }
+        if (!isStarting.compareAndSet(false, true)) {
             return
         }
         VpnStateStore.update(VpnState.CONNECTING)
@@ -62,19 +82,32 @@ class AppVpnService : android.net.VpnService() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        val configJson = ConfigRepository.loadOrCreateConfig(this)
-        val result = SingBoxEngine.start(configJson, platform)
-        if (!result.ok) {
-            VpnStateStore.update(VpnState.ERROR, result.error)
-            stopTunnel(resetState = false)
-            return
+        // 首次启动可能伴随规则下载，放到后台避免阻塞 UI。
+        serviceScope.launch {
+            val result = runCatching {
+                val configJson = ConfigRepository.loadOrCreateConfig(this@AppVpnService)
+                SingBoxEngine.start(configJson, platform)
+            }.getOrElse { error ->
+                CoreStartResult(
+                    ok = false,
+                    error = error.message ?: "core start failed"
+                )
+            }
+            mainHandler.post {
+                isStarting.set(false)
+                if (!result.ok) {
+                    VpnStateStore.update(VpnState.ERROR, result.error)
+                    stopTunnel(resetState = false)
+                    return@post
+                }
+                VpnStateStore.update(VpnState.CONNECTED)
+                notifyStatus("已连接")
+            }
         }
-
-        VpnStateStore.update(VpnState.CONNECTED)
-        notifyStatus("已连接")
     }
 
     private fun stopTunnel(resetState: Boolean = true) {
+        isStarting.set(false)
         SingBoxEngine.stop()
         vpnInterface?.close()
         vpnInterface = null

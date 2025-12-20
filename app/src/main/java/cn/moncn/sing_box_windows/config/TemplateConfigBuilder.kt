@@ -274,7 +274,8 @@ object TemplateConfigBuilder {
                         JSONArray()
                             .put(JSONObject().put("rule_set", "geosite-category-ads-all"))
                             .put(JSONObject().put("domain_regex", "^stun\\..+"))
-                            .put(JSONObject().put("domain_keyword", JSONArray().put("stun").put("httpdns")))
+                            // 避免误伤国内 App 的 HTTPDNS，仅拦截 STUN 与广告域名。
+                            .put(JSONObject().put("domain_keyword", JSONArray().put("stun")))
                             .put(JSONObject().put("protocol", "stun"))
                     )
                     .put("action", "reject")
