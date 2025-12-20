@@ -2,6 +2,7 @@ package cn.moncn.sing_box_windows.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,15 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.OnApplyWindowInsetsListener
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import cn.moncn.sing_box_windows.config.SubscriptionItem
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.core.CoreStatus
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
@@ -58,23 +65,41 @@ import java.util.Locale
 private val CardShape = RoundedCornerShape(24.dp)
 private val PillShape = RoundedCornerShape(999.dp)
 
+enum class MessageTone {
+    Info,
+    Success,
+    Warning,
+    Error
+}
+
+data class MessageDialogState(
+    val title: String,
+    val message: String,
+    val tone: MessageTone = MessageTone.Info,
+    val confirmText: String = "确定",
+    val dismissText: String? = null,
+    val onConfirm: (() -> Unit)? = null
+)
+
 @Composable
 fun MainScreen(
     state: VpnState,
-    error: String?,
     coreStatus: CoreStatus?,
     coreVersion: String?,
     subscriptions: SubscriptionState,
     nameInput: String,
     urlInput: String,
-    updateMessage: String?,
-    updating: Boolean,
+    updatingId: String?,
     groups: List<OutboundGroupModel>,
+    dialogMessage: MessageDialogState?,
+    onDismissDialog: () -> Unit,
+    onShowMessage: (MessageDialogState) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onNameChange: (String) -> Unit,
     onUrlChange: (String) -> Unit,
     onAddSubscription: () -> Unit,
+    onEditSubscription: (String, String, String) -> Unit,
     onSelectSubscription: (String) -> Unit,
     onRemoveSubscription: (String) -> Unit,
     onUpdateSubscription: () -> Unit,
@@ -104,6 +129,22 @@ fun MainScreen(
     val selected = subscriptions.selected()
     val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
     var currentTab by remember { mutableStateOf(MainTab.Home) }
+    val statusBarPadding = rememberStatusBarPadding()
+
+    if (dialogMessage != null) {
+        MessageDialog(
+            title = dialogMessage.title,
+            message = dialogMessage.message,
+            tone = dialogMessage.tone,
+            confirmText = dialogMessage.confirmText,
+            dismissText = dialogMessage.dismissText,
+            onConfirm = {
+                dialogMessage.onConfirm?.invoke()
+                onDismissDialog()
+            },
+            onDismiss = onDismissDialog
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -123,9 +164,12 @@ fun MainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = statusBarPadding + 8.dp,
+                    bottom = 12.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AppHeader(statusText = statusText, statusColor = statusColor)
@@ -140,7 +184,6 @@ fun MainScreen(
                 MainTab.Home -> HomeTab(
                     modifier = Modifier.weight(1f),
                     state = state,
-                    error = error,
                     statusText = statusText,
                     actionText = actionText,
                     statusColor = statusColor,
@@ -155,12 +198,13 @@ fun MainScreen(
                     subscriptions = subscriptions,
                     nameInput = nameInput,
                     urlInput = urlInput,
-                    updateMessage = updateMessage,
-                    updating = updating,
+                    updatingId = updatingId,
                     dateFormatter = dateFormatter,
                     onNameChange = onNameChange,
                     onUrlChange = onUrlChange,
+                    onShowMessage = onShowMessage,
                     onAddSubscription = onAddSubscription,
+                    onEditSubscription = onEditSubscription,
                     onSelectSubscription = onSelectSubscription,
                     onRemoveSubscription = onRemoveSubscription,
                     onUpdateSubscription = onUpdateSubscription
@@ -181,7 +225,6 @@ fun MainScreen(
 private fun HomeTab(
     modifier: Modifier,
     state: VpnState,
-    error: String?,
     statusText: String,
     actionText: String,
     statusColor: Color,
@@ -221,14 +264,13 @@ private fun HomeTab(
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
             ConnectionHero(
                 statusText = statusText,
                 state = state,
-                error = error,
                 statusColor = statusColor,
                 actionText = actionText,
                 onConnect = onConnect,
@@ -330,73 +372,117 @@ private fun SubscriptionTab(
     subscriptions: SubscriptionState,
     nameInput: String,
     urlInput: String,
-    updateMessage: String?,
-    updating: Boolean,
+    updatingId: String?,
     dateFormatter: SimpleDateFormat,
     onNameChange: (String) -> Unit,
     onUrlChange: (String) -> Unit,
+    onShowMessage: (MessageDialogState) -> Unit,
     onAddSubscription: () -> Unit,
+    onEditSubscription: (String, String, String) -> Unit,
     onSelectSubscription: (String) -> Unit,
     onRemoveSubscription: (String) -> Unit,
     onUpdateSubscription: () -> Unit
 ) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingItem by remember { mutableStateOf<SubscriptionItem?>(null) }
+    var editNameInput by remember { mutableStateOf("") }
+    var editUrlInput by remember { mutableStateOf("") }
+    val isUpdating = updatingId != null
+    val accent = MaterialTheme.colorScheme.primary
+
+    if (showAddDialog) {
+        // 弹窗内复用输入状态，避免新增与页面状态不同步。
+        AddSubscriptionDialog(
+            nameInput = nameInput,
+            urlInput = urlInput,
+            onNameChange = onNameChange,
+            onUrlChange = onUrlChange,
+            onDismiss = {
+                showAddDialog = false
+            },
+            onConfirm = {
+                val trimmedUrl = urlInput.trim()
+                if (trimmedUrl.isBlank()) {
+                    onShowMessage(
+                        MessageDialogState(
+                            title = "提示",
+                            message = "请输入订阅地址",
+                            tone = MessageTone.Warning
+                        )
+                    )
+                } else {
+                    onAddSubscription()
+                    showAddDialog = false
+                }
+            }
+        )
+    }
+
+    if (editingItem != null) {
+        EditSubscriptionDialog(
+            nameInput = editNameInput,
+            urlInput = editUrlInput,
+            onNameChange = { editNameInput = it },
+            onUrlChange = { editUrlInput = it },
+            onDismiss = { editingItem = null },
+            onConfirm = {
+                val trimmedUrl = editUrlInput.trim()
+                if (trimmedUrl.isBlank()) {
+                    onShowMessage(
+                        MessageDialogState(
+                            title = "提示",
+                            message = "请输入订阅地址",
+                            tone = MessageTone.Warning
+                        )
+                    )
+                } else {
+                    onEditSubscription(editingItem!!.id, editNameInput, editUrlInput)
+                    editingItem = null
+                }
+            }
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
             SectionCard {
                 SectionTitle(
                     title = "订阅管理",
-                    subtitle = selectedName ?: "未选择订阅",
+                    subtitle = selectedName ?: "未启用订阅",
                     trailing = {
-                        Button(
-                            onClick = onUpdateSubscription,
-                            enabled = !updating && selectedName != null,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = if (updating) "更新中..." else "更新订阅")
+                            OutlinedButton(
+                                onClick = {
+                                    showAddDialog = true
+                                },
+                                enabled = !isUpdating
+                            ) {
+                                Text(text = "添加订阅")
+                            }
+                            Button(
+                                onClick = onUpdateSubscription,
+                                enabled = !isUpdating && selectedName != null,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = accent
+                                )
+                            ) {
+                                Text(text = if (isUpdating) "同步中..." else "刷新当前")
+                            }
                         }
                     }
                 )
-
-                if (!updateMessage.isNullOrBlank()) {
-                    InfoBanner(message = updateMessage)
-                }
-            }
-        }
-
-        item {
-            SectionCard {
-                SectionTitle(title = "添加订阅", subtitle = "支持 Clash/通用订阅地址")
-                OutlinedTextField(
-                    value = nameInput,
-                    onValueChange = onNameChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("名称（可选）") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp)
+                Text(
+                    text = "选择订阅后会自动下载并启用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = onUrlChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("订阅地址") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                Button(
-                    onClick = onAddSubscription,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(text = "添加订阅")
-                }
             }
         }
 
@@ -404,7 +490,7 @@ private fun SubscriptionTab(
             item {
                 SectionCard {
                     Text(
-                        text = "暂无订阅，添加后可一键更新配置。",
+                        text = "暂无订阅，请点击上方“添加订阅”进行新增。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -413,19 +499,41 @@ private fun SubscriptionTab(
         } else {
             items(subscriptions.items, key = { it.id }) { item ->
                 val selectedItem = subscriptions.selectedId == item.id
+                val isItemUpdating = updatingId == item.id
+                val highlightColor = accent
+                val backgroundModifier = if (selectedItem) {
+                    Modifier.background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                highlightColor.copy(alpha = 0.18f),
+                                MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    )
+                } else {
+                    Modifier
+                }
                 Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(CardShape)
+                        .border(
+                            width = 1.dp,
+                            color = if (selectedItem) {
+                                highlightColor.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            },
+                            shape = CardShape
+                        ),
                     shape = CardShape,
-                    color = if (selectedItem) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    tonalElevation = 2.dp,
-                    shadowElevation = 6.dp
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = if (selectedItem) 4.dp else 2.dp,
+                    shadowElevation = if (selectedItem) 10.dp else 6.dp
                 ) {
                     Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = backgroundModifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -448,40 +556,83 @@ private fun SubscriptionTab(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            if (selectedItem) {
-                                TagChip(text = "已选中", color = MaterialTheme.colorScheme.primary)
+                            if (isItemUpdating) {
+                                TagChip(text = "同步中", color = MaterialTheme.colorScheme.secondary)
+                            } else if (selectedItem) {
+                                TagChip(text = "使用中", color = highlightColor)
                             }
                         }
                         val updateText = item.lastUpdatedAt?.let {
-                            "更新时间：${dateFormatter.format(Date(it))}"
-                        } ?: "更新时间：-"
+                            "最近同步：${dateFormatter.format(Date(it))}"
+                        } ?: "尚未同步"
                         Text(
                             text = updateText,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (!item.lastError.isNullOrBlank()) {
-                            Text(
-                                text = "错误：${item.lastError}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TagChip(
+                                    text = "同步失败",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                TextButton(
+                                    onClick = {
+                                        onShowMessage(
+                                            MessageDialogState(
+                                                title = "订阅同步失败",
+                                                message = item.lastError,
+                                                tone = MessageTone.Error
+                                            )
+                                        )
+                                    },
+                                    enabled = !isUpdating,
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Text(text = "查看错误")
+                                }
+                            }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            val actionText = if (selectedItem) "刷新订阅" else "启用并下载"
                             Button(
-                                onClick = { onSelectSubscription(item.id) },
-                                enabled = !selectedItem,
+                                onClick = {
+                                    if (selectedItem) {
+                                        onUpdateSubscription()
+                                    } else {
+                                        onSelectSubscription(item.id)
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isUpdating,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
+                                    containerColor = highlightColor
                                 )
                             ) {
-                                Text(text = if (selectedItem) "已选中" else "选择")
+                                Text(text = if (isItemUpdating) "同步中..." else actionText)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    editingItem = item
+                                    editNameInput = item.name
+                                    editUrlInput = item.url
+                                },
+                                enabled = !isUpdating
+                            ) {
+                                Text(text = "编辑")
                             }
                             TextButton(
                                 onClick = { onRemoveSubscription(item.id) },
+                                enabled = !isUpdating,
                                 colors = ButtonDefaults.textButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error
                                 )
@@ -507,7 +658,7 @@ private fun NodesTab(
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
@@ -525,7 +676,7 @@ private fun NodesTab(
             item {
                 SectionCard {
                     Text(
-                        text = "暂无节点信息，请先更新订阅并建立连接。",
+                        text = "暂无节点信息，请先启用订阅并建立连接。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -673,7 +824,6 @@ private fun TabSwitcher(
 private fun ConnectionHero(
     statusText: String,
     state: VpnState,
-    error: String?,
     statusColor: Color,
     actionText: String,
     onConnect: () -> Unit,
@@ -732,19 +882,6 @@ private fun ConnectionHero(
                 style = MaterialTheme.typography.bodyMedium,
                 color = onPrimary.copy(alpha = 0.85f)
             )
-            if (!error.isNullOrBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
-                ) {
-                    Text(
-                        text = error,
-                        modifier = Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = onPrimary
-                    )
-                }
-            }
             Button(
                 onClick = {
                     if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
@@ -903,20 +1040,183 @@ private fun TagChip(text: String, color: Color) {
 }
 
 @Composable
-private fun InfoBanner(message: String) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
-    ) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary
-        )
-    }
+private fun AddSubscriptionDialog(
+    nameInput: String,
+    urlInput: String,
+    onNameChange: (String) -> Unit,
+    onUrlChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
+        title = {
+            Text(text = "添加订阅", style = MaterialTheme.typography.titleMedium)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "支持 Clash/通用订阅地址。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = onNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("名称（可选）") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = onUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("订阅地址") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm
+            ) {
+                Text(text = "添加")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消")
+            }
+        }
+    )
 }
 
+@Composable
+private fun EditSubscriptionDialog(
+    nameInput: String,
+    urlInput: String,
+    onNameChange: (String) -> Unit,
+    onUrlChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
+        title = {
+            Text(text = "编辑订阅", style = MaterialTheme.typography.titleMedium)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "修改名称或订阅地址。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = onNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("名称（可选）") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = onUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("订阅地址") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(text = "保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun MessageDialog(
+    title: String,
+    message: String,
+    tone: MessageTone,
+    confirmText: String,
+    dismissText: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val accent = when (tone) {
+        MessageTone.Info -> MaterialTheme.colorScheme.primary
+        MessageTone.Success -> Mint500
+        MessageTone.Warning -> Amber500
+        MessageTone.Error -> Rose500
+    }
+    val accentSurface = accent.copy(alpha = 0.12f)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(accentSurface),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = accent
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = accent)
+            ) {
+                Text(text = confirmText)
+            }
+        },
+        dismissButton = {
+            if (!dismissText.isNullOrBlank()) {
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(contentColor = accent)
+                ) {
+                    Text(text = dismissText)
+                }
+            }
+        }
+    )
+}
 @Composable
 private fun NodeRow(
     tag: String,
@@ -1025,6 +1325,26 @@ private fun formatMemory(value: Long): String {
 private fun formatSpeed(value: Long): String {
     if (value <= 0) return "0B/s"
     return "${formatBytes(value)}/s"
+}
+
+@Composable
+private fun rememberStatusBarPadding(): androidx.compose.ui.unit.Dp {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    var topInset by remember { mutableStateOf(0) }
+
+    DisposableEffect(view) {
+        // 使用系统 WindowInsets 获取状态栏高度，适配不同设备。
+        val listener = OnApplyWindowInsetsListener { _, insets ->
+            topInset = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(view, listener)
+        ViewCompat.requestApplyInsets(view)
+        onDispose { ViewCompat.setOnApplyWindowInsetsListener(view, null) }
+    }
+
+    return with(density) { topInset.toDp() }
 }
 
 private enum class MainTab(val title: String) {

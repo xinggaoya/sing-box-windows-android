@@ -40,6 +40,20 @@ data class SubscriptionUpdateResult(
     val state: SubscriptionState
 )
 
+data class SubscriptionAddResult(
+    val state: SubscriptionState,
+    val item: SubscriptionItem
+)
+
+data class SubscriptionEditResult(
+    val ok: Boolean,
+    val message: String,
+    val state: SubscriptionState,
+    val item: SubscriptionItem? = null,
+    val urlChanged: Boolean = false,
+    val nameChanged: Boolean = false
+)
+
 object SubscriptionRepository {
     private const val FILE_NAME = "subscriptions.json"
 
@@ -66,14 +80,13 @@ object SubscriptionRepository {
                 )
             }
             val validSelected = selectedId?.takeIf { id -> items.any { it.id == id } }
-            val fallbackSelected = validSelected ?: items.firstOrNull()?.id
-            SubscriptionState(items, fallbackSelected)
+            SubscriptionState(items, validSelected)
         }.getOrElse {
             SubscriptionState.empty()
         }
     }
 
-    fun add(context: Context, name: String, url: String): SubscriptionState {
+    fun add(context: Context, name: String, url: String): SubscriptionAddResult {
         val state = load(context)
         val cleanName = name.trim()
         val cleanUrl = url.trim()
@@ -83,15 +96,15 @@ object SubscriptionRepository {
             name = displayName,
             url = cleanUrl
         )
-        val newState = SubscriptionState(state.items + newItem, newItem.id)
+        val newState = SubscriptionState(state.items + newItem, state.selectedId)
         save(context, newState)
-        return newState
+        return SubscriptionAddResult(newState, newItem)
     }
 
     fun remove(context: Context, id: String): SubscriptionState {
         val state = load(context)
         val remaining = state.items.filterNot { it.id == id }
-        val nextSelected = state.selectedId?.takeIf { it != id } ?: remaining.firstOrNull()?.id
+        val nextSelected = state.selectedId?.takeIf { it != id }
         val newState = SubscriptionState(remaining, nextSelected)
         save(context, newState)
         return newState
@@ -104,12 +117,71 @@ object SubscriptionRepository {
         return newState
     }
 
+    fun edit(context: Context, id: String, name: String, url: String): SubscriptionEditResult {
+        val state = load(context)
+        val item = state.items.firstOrNull { it.id == id }
+            ?: return SubscriptionEditResult(
+                ok = false,
+                message = "订阅不存在",
+                state = state
+            )
+        val cleanUrl = url.trim()
+        if (cleanUrl.isBlank()) {
+            return SubscriptionEditResult(
+                ok = false,
+                message = "订阅地址不能为空",
+                state = state
+            )
+        }
+        val cleanName = name.trim()
+        val displayName = if (cleanName.isBlank()) item.name else cleanName
+        val urlChanged = cleanUrl != item.url
+        val nameChanged = displayName != item.name
+        val updatedItem = item.copy(
+            name = displayName,
+            url = cleanUrl,
+            lastError = if (urlChanged) null else item.lastError,
+            lastUpdatedAt = if (urlChanged) null else item.lastUpdatedAt
+        )
+        val items = state.items.map { if (it.id == id) updatedItem else it }
+        val newState = SubscriptionState(items, state.selectedId)
+        save(context, newState)
+        return SubscriptionEditResult(
+            ok = true,
+            message = "订阅信息已保存",
+            state = newState,
+            item = updatedItem,
+            urlChanged = urlChanged,
+            nameChanged = nameChanged
+        )
+    }
+
+    fun activate(context: Context, id: String): SubscriptionUpdateResult {
+        val state = load(context)
+        val item = state.items.firstOrNull { it.id == id }
+            ?: return SubscriptionUpdateResult(
+                ok = false,
+                message = "订阅不存在",
+                warnings = emptyList(),
+                state = state
+            )
+        val result = updateItem(context, item)
+        if (!result.ok) {
+            return result
+        }
+        // 仅在订阅成功同步后才标记为当前订阅，避免配置不一致。
+        val activatedState = SubscriptionState(result.state.items, id)
+        save(context, activatedState)
+        val message = "已启用，${result.message}"
+        return result.copy(message = message, state = activatedState)
+    }
+
     fun updateSelected(context: Context): SubscriptionUpdateResult {
         val state = load(context)
         val selected = state.selected()
             ?: return SubscriptionUpdateResult(
                 ok = false,
-                message = "请先选择订阅",
+                message = "请先启用订阅",
                 warnings = emptyList(),
                 state = state
             )
@@ -125,15 +197,15 @@ object SubscriptionRepository {
             }
             ConfigRepository.saveConfig(context, result.configJson)
             val message = if (result.warnings.isNotEmpty()) {
-                "订阅更新完成，但有 ${result.warnings.size} 条警告"
+                "订阅同步完成，但有 ${result.warnings.size} 条警告"
             } else {
-                "订阅更新成功"
+                "订阅同步成功"
             }
             buildUpdateResult(context, item, message, result.warnings)
         } catch (e: Exception) {
-            val updatedItem = item.copy(lastError = e.message ?: "订阅更新失败")
+            val updatedItem = item.copy(lastError = e.message ?: "订阅同步失败")
             val state = replaceItem(context, updatedItem)
-            SubscriptionUpdateResult(false, updatedItem.lastError ?: "订阅更新失败", emptyList(), state)
+            SubscriptionUpdateResult(false, updatedItem.lastError ?: "订阅同步失败", emptyList(), state)
         }
     }
 
