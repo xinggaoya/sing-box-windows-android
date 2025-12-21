@@ -48,6 +48,7 @@ fun SubscriptionScreen(
     subscriptions: SubscriptionState,
     updatingId: String?,
     onAddSubscription: (String, String) -> Unit,
+    onImportNodes: (String, String) -> Unit,
     onEditSubscription: (String, String, String) -> Unit,
     onRemoveSubscription: (String) -> Unit,
     onSelectSubscription: (String) -> Unit,
@@ -131,16 +132,32 @@ fun SubscriptionScreen(
     if (showAddDialog) {
         var name by remember { mutableStateOf("") }
         var url by remember { mutableStateOf("") }
+        var content by remember { mutableStateOf("") }
+        var inputMode by remember { mutableStateOf(AddSubscriptionInputMode.Url) }
         AddSubscriptionDialog(
             name = name,
             url = url,
+            content = content,
+            inputMode = inputMode,
             onNameChange = { name = it },
             onUrlChange = { url = it },
+            onContentChange = { content = it },
+            onModeChange = { inputMode = it },
             onDismiss = { showAddDialog = false },
             onConfirm = {
-                if (url.isNotBlank()) {
-                    onAddSubscription(name, url)
-                    showAddDialog = false
+                when (inputMode) {
+                    AddSubscriptionInputMode.Url -> {
+                        if (url.isNotBlank()) {
+                            onAddSubscription(name, url)
+                            showAddDialog = false
+                        }
+                    }
+                    AddSubscriptionInputMode.NodeList -> {
+                        if (content.isNotBlank()) {
+                            onImportNodes(name, content)
+                            showAddDialog = false
+                        }
+                    }
                 }
             }
         )
@@ -152,6 +169,7 @@ fun SubscriptionScreen(
         EditSubscriptionDialog(
             name = name,
             url = url,
+            isLocal = item.isLocal,
             onNameChange = { name = it },
             onUrlChange = { url = it },
             onDismiss = { editingItem = null },
@@ -194,14 +212,19 @@ fun SubscriptionItemRow(
                         color = scheme.onSurface
                     )
                     Text(
-                        text = item.url,
+                        text = if (item.isLocal) "本地节点列表" else item.url,
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                         maxLines = 1
                     )
                 }
-                if (isSelected) {
-                    StatusBadge(text = "使用中", color = scheme.secondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (item.isLocal) {
+                        StatusBadge(text = "本地", color = scheme.tertiary)
+                    }
+                    if (isSelected) {
+                        StatusBadge(text = "使用中", color = scheme.secondary)
+                    }
                 }
             }
 
@@ -213,14 +236,24 @@ fun SubscriptionItemRow(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     when {
                         isUpdating -> {
-                            StatusBadge(text = "同步中", color = scheme.tertiary)
+                            StatusBadge(
+                                text = if (item.isLocal) "应用中" else "同步中",
+                                color = scheme.tertiary
+                            )
                         }
                         item.lastError != null -> {
                             Text(
-                                text = "同步失败: ${item.lastError}",
+                                text = if (item.isLocal) "应用失败: ${item.lastError}" else "同步失败: ${item.lastError}",
                                 color = scheme.error,
                                 style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.clickable { onShowError(item.lastError!!) }
+                            )
+                        }
+                        item.isLocal -> {
+                            Text(
+                                text = "本地订阅，不支持同步更新",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = scheme.outline
                             )
                         }
                         else -> {
@@ -240,7 +273,7 @@ fun SubscriptionItemRow(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onUpdate, enabled = !isUpdating) {
+                    IconButton(onClick = onUpdate, enabled = !isUpdating && !item.isLocal) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "更新")
                     }
                     IconButton(onClick = onEdit) {
@@ -272,8 +305,12 @@ fun SubscriptionItemRow(
 fun AddSubscriptionDialog(
     name: String,
     url: String,
+    content: String,
+    inputMode: AddSubscriptionInputMode,
     onNameChange: (String) -> Unit,
     onUrlChange: (String) -> Unit,
+    onContentChange: (String) -> Unit,
+    onModeChange: (AddSubscriptionInputMode) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -282,6 +319,23 @@ fun AddSubscriptionDialog(
         title = { Text("添加订阅") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (inputMode == AddSubscriptionInputMode.Url) {
+                        FilledTonalButton(onClick = { onModeChange(AddSubscriptionInputMode.Url) }) {
+                            Text("订阅地址")
+                        }
+                        TextButton(onClick = { onModeChange(AddSubscriptionInputMode.NodeList) }) {
+                            Text("节点列表")
+                        }
+                    } else {
+                        TextButton(onClick = { onModeChange(AddSubscriptionInputMode.Url) }) {
+                            Text("订阅地址")
+                        }
+                        FilledTonalButton(onClick = { onModeChange(AddSubscriptionInputMode.NodeList) }) {
+                            Text("节点列表")
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
@@ -289,18 +343,43 @@ fun AddSubscriptionDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = onUrlChange,
-                    label = { Text("订阅地址") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (inputMode == AddSubscriptionInputMode.Url) {
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = onUrlChange,
+                        label = { Text("订阅地址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = content,
+                        onValueChange = onContentChange,
+                        label = { Text("节点列表 (每行一条)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 4
+                    )
+                    Text(
+                        text = "支持 vless://、vmess://、ss://、ssr://、trojan://、hysteria2://、tuic://",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "节点列表会生成配置并保存为本地订阅，无法在线更新。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("添加")
+            val canSubmit = when (inputMode) {
+                AddSubscriptionInputMode.Url -> url.isNotBlank()
+                AddSubscriptionInputMode.NodeList -> content.isNotBlank()
+            }
+            val buttonText = if (inputMode == AddSubscriptionInputMode.Url) "添加" else "导入并保存"
+            Button(onClick = onConfirm, enabled = canSubmit) {
+                Text(buttonText)
             }
         },
         dismissButton = {
@@ -315,6 +394,7 @@ fun AddSubscriptionDialog(
 fun EditSubscriptionDialog(
     name: String,
     url: String,
+    isLocal: Boolean,
     onNameChange: (String) -> Unit,
     onUrlChange: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -335,10 +415,18 @@ fun EditSubscriptionDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = onUrlChange,
-                    label = { Text("订阅地址") },
+                    label = { Text(if (isLocal) "节点来源" else "订阅地址") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLocal
                 )
+                if (isLocal) {
+                    Text(
+                        text = "本地订阅无法更新内容，如需修改请重新导入。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {
@@ -352,4 +440,9 @@ fun EditSubscriptionDialog(
             }
         }
     )
+}
+
+enum class AddSubscriptionInputMode {
+    Url,
+    NodeList
 }

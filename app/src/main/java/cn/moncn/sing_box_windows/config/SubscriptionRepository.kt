@@ -19,7 +19,9 @@ data class SubscriptionItem(
     val name: String,
     val url: String,
     val lastUpdatedAt: Long? = null,
-    val lastError: String? = null
+    val lastError: String? = null,
+    val isLocal: Boolean = false,
+    val content: String? = null
 )
 
 data class SubscriptionState(
@@ -56,6 +58,12 @@ data class SubscriptionEditResult(
 
 object SubscriptionRepository {
     private const val FILE_NAME = "subscriptions.json"
+    private const val LOCAL_URL = "本地节点列表"
+
+    fun buildConfigFromContent(content: String): TemplateBuildResult {
+        val decoded = decodeSubscriptionBody(content)
+        return TemplateConfigBuilder.buildFromSubscription(decoded)
+    }
 
     fun load(context: Context): SubscriptionState {
         val file = File(context.filesDir, FILE_NAME)
@@ -69,13 +77,17 @@ object SubscriptionRepository {
             val items = mutableListOf<SubscriptionItem>()
             for (index in 0 until itemsJson.length()) {
                 val obj = itemsJson.optJSONObject(index) ?: continue
+                val isLocal = obj.optBoolean("isLocal", false)
+                val url = obj.optString("url").ifBlank { if (isLocal) LOCAL_URL else "" }
                 items.add(
                     SubscriptionItem(
                         id = obj.optString("id"),
                         name = obj.optString("name"),
-                        url = obj.optString("url"),
+                        url = url,
                         lastUpdatedAt = obj.optLong("lastUpdatedAt").takeIf { it > 0 },
-                        lastError = obj.optString("lastError").takeIf { it.isNotBlank() }
+                        lastError = obj.optString("lastError").takeIf { it.isNotBlank() },
+                        isLocal = isLocal,
+                        content = obj.optString("content").takeIf { it.isNotBlank() }
                     )
                 )
             }
@@ -99,6 +111,39 @@ object SubscriptionRepository {
         val newState = SubscriptionState(state.items + newItem, state.selectedId)
         save(context, newState)
         return SubscriptionAddResult(newState, newItem)
+    }
+
+    fun importLocal(context: Context, name: String, content: String): SubscriptionUpdateResult {
+        val parsed = buildConfigFromContent(content)
+        if (!parsed.ok || parsed.configJson == null) {
+            return SubscriptionUpdateResult(
+                ok = false,
+                message = parsed.error ?: "节点列表解析失败",
+                warnings = emptyList(),
+                state = load(context)
+            )
+        }
+        ConfigRepository.saveConfig(context, parsed.configJson)
+        val state = load(context)
+        val cleanName = name.trim()
+        val displayName = cleanName.ifBlank { deriveLocalName(state.items.count { it.isLocal } + 1) }
+        val newItem = SubscriptionItem(
+            id = UUID.randomUUID().toString(),
+            name = displayName,
+            url = LOCAL_URL,
+            lastUpdatedAt = System.currentTimeMillis(),
+            lastError = null,
+            isLocal = true,
+            content = content.trim()
+        )
+        val newState = SubscriptionState(state.items + newItem, newItem.id)
+        save(context, newState)
+        val message = if (parsed.warnings.isNotEmpty()) {
+            "本地节点已应用，但有 ${parsed.warnings.size} 条警告"
+        } else {
+            "本地节点已应用"
+        }
+        return SubscriptionUpdateResult(true, message, parsed.warnings, newState)
     }
 
     fun remove(context: Context, id: String): SubscriptionState {
@@ -125,6 +170,23 @@ object SubscriptionRepository {
                 message = "订阅不存在",
                 state = state
             )
+        if (item.isLocal) {
+            val cleanName = name.trim()
+            val displayName = if (cleanName.isBlank()) item.name else cleanName
+            val nameChanged = displayName != item.name
+            val updatedItem = item.copy(name = displayName)
+            val items = state.items.map { if (it.id == id) updatedItem else it }
+            val newState = SubscriptionState(items, state.selectedId)
+            save(context, newState)
+            return SubscriptionEditResult(
+                ok = true,
+                message = "本地订阅已更新",
+                state = newState,
+                item = updatedItem,
+                urlChanged = false,
+                nameChanged = nameChanged
+            )
+        }
         val cleanUrl = url.trim()
         if (cleanUrl.isBlank()) {
             return SubscriptionEditResult(
@@ -190,6 +252,21 @@ object SubscriptionRepository {
 
     private fun updateItem(context: Context, item: SubscriptionItem): SubscriptionUpdateResult {
         return try {
+            if (item.isLocal) {
+                val content = item.content?.takeIf { it.isNotBlank() }
+                    ?: throw IOException("本地节点内容为空")
+                val result = buildConfigFromContent(content)
+                if (!result.ok || result.configJson == null) {
+                    throw IOException(result.error ?: "本地节点解析失败")
+                }
+                ConfigRepository.saveConfig(context, result.configJson)
+                val message = if (result.warnings.isNotEmpty()) {
+                    "本地节点已应用，但有 ${result.warnings.size} 条警告"
+                } else {
+                    "本地节点已应用"
+                }
+                return buildUpdateResult(context, item, message, result.warnings)
+            }
             val content = fetchSubscription(item.url)
             val result = TemplateConfigBuilder.buildFromSubscription(content)
             if (!result.ok || result.configJson == null) {
@@ -243,6 +320,8 @@ object SubscriptionRepository {
             obj.put("url", item.url)
             obj.put("lastUpdatedAt", item.lastUpdatedAt ?: 0)
             obj.put("lastError", item.lastError ?: "")
+            obj.put("isLocal", item.isLocal)
+            obj.put("content", item.content ?: "")
             items.put(obj)
         }
         root.put("items", items)
@@ -252,6 +331,10 @@ object SubscriptionRepository {
     private fun deriveName(url: String, index: Int): String {
         val host = runCatching { Uri.parse(url).host }.getOrNull()
         return host ?: "订阅$index"
+    }
+
+    private fun deriveLocalName(index: Int): String {
+        return "本地节点$index"
     }
 
     private fun fetchSubscription(url: String): String {
@@ -402,6 +485,9 @@ object SubscriptionRepository {
             line.startsWith("vmess://", ignoreCase = true) -> parseVmessUri(line, fallbackName)
             line.startsWith("vless://", ignoreCase = true) -> parseVlessUri(line, fallbackName)
             line.startsWith("ss://", ignoreCase = true) -> parseShadowsocksUri(line, fallbackName)
+            line.startsWith("ssr://", ignoreCase = true) -> parseShadowsocksrUri(line, fallbackName)
+            line.startsWith("hysteria2://", ignoreCase = true) -> parseHysteria2Uri(line, fallbackName)
+            line.startsWith("tuic://", ignoreCase = true) -> parseTuicUri(line, fallbackName)
             else -> null
         }
     }
@@ -582,6 +668,121 @@ object SubscriptionRepository {
         return node
     }
 
+    private fun parseShadowsocksrUri(line: String, fallbackName: String): JSONObject? {
+        // SSR 链接内容为 base64(server:port:protocol:method:obfs:password/?params)
+        val encoded = line.substringAfter("://").substringBefore("#")
+        val decodedBytes = decodeBase64(encoded) ?: return null
+        val decodedText = decodedBytes.toString(Charsets.UTF_8)
+        val mainPart = decodedText.substringBefore("/?")
+        val paramsPart = decodedText.substringAfter("/?", "")
+        val parts = mainPart.split(":")
+        if (parts.size < 6) {
+            return null
+        }
+        val server = parts[0]
+        val port = parts[1].toIntOrNull() ?: return null
+        val protocol = parts[2]
+        val method = parts[3]
+        val obfs = parts[4]
+        val passwordEncoded = parts[5]
+        val password = decodeSsrParam(passwordEncoded)?.takeIf { it.isNotBlank() } ?: return null
+        val params = parseQueryParameters(paramsPart)
+        val name = decodeSsrParam(params["remarks"])?.takeIf { it.isNotBlank() } ?: fallbackName
+        val outbound = JSONObject()
+            .put("type", "shadowsocksr")
+            .put("tag", name)
+            .put("server", server)
+            .put("server_port", port)
+            .put("method", method)
+            .put("password", password)
+            .put("protocol", protocol)
+            .put("obfs", obfs)
+        decodeSsrParam(params["protoparam"])?.takeIf { it.isNotBlank() }
+            ?.let { outbound.put("protocol_param", it) }
+        decodeSsrParam(params["obfsparam"])?.takeIf { it.isNotBlank() }
+            ?.let { outbound.put("obfs_param", it) }
+        return outbound
+    }
+
+    private fun parseHysteria2Uri(line: String, fallbackName: String): JSONObject? {
+        val withoutScheme = line.substringAfter("://")
+        val fragment = withoutScheme.substringAfter("#", "")
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() } ?: fallbackName
+        val withoutFragment = withoutScheme.substringBefore("#")
+        val hostPart = withoutFragment.substringBefore("?")
+        val queryPart = withoutFragment.substringAfter("?", "")
+        val atIndex = hostPart.indexOf('@')
+        val auth = if (atIndex > 0) decodeUriComponent(hostPart.substring(0, atIndex)) else ""
+        val hostPort = if (atIndex > 0) hostPart.substring(atIndex + 1) else hostPart
+        val (host, port) = splitHostPort(hostPort, 443)
+        val queryMap = parseQueryParameters(queryPart)
+        val password = queryMap["password"]?.takeIf { it.isNotBlank() }
+            ?: queryMap["auth"]?.takeIf { it.isNotBlank() }
+            ?: auth.takeIf { it.isNotBlank() }
+        if (password.isNullOrBlank()) {
+            return null
+        }
+        val node = JSONObject()
+            .put("type", "hysteria2")
+            .put("tag", name)
+            .put("server", host)
+            .put("server_port", port)
+            .put("password", password)
+            .put("tls", buildTlsFromQuery(queryMap))
+        parseNumber(queryMap["upmbps"] ?: queryMap["up_mbps"] ?: queryMap["up"])
+            ?.let { node.put("up_mbps", it) }
+        parseNumber(queryMap["downmbps"] ?: queryMap["down_mbps"] ?: queryMap["down"])
+            ?.let { node.put("down_mbps", it) }
+        queryMap["network"]?.lowercase()?.takeIf { it == "tcp" || it == "udp" }
+            ?.let { node.put("network", it) }
+        val obfsType = queryMap["obfs"]?.takeIf { it.isNotBlank() }
+        if (!obfsType.isNullOrBlank()) {
+            val obfs = JSONObject().put("type", obfsType)
+            val obfsPassword = queryMap["obfs-password"] ?: queryMap["obfs_password"]
+            obfsPassword?.takeIf { it.isNotBlank() }?.let { obfs.put("password", it) }
+            node.put("obfs", obfs)
+        }
+        return node
+    }
+
+    private fun parseTuicUri(line: String, fallbackName: String): JSONObject? {
+        val withoutScheme = line.substringAfter("://")
+        val fragment = withoutScheme.substringAfter("#", "")
+        val name = decodeUriComponent(fragment).takeIf { it.isNotBlank() } ?: fallbackName
+        val withoutFragment = withoutScheme.substringBefore("#")
+        val hostPart = withoutFragment.substringBefore("?")
+        val queryPart = withoutFragment.substringAfter("?", "")
+        val atIndex = hostPart.indexOf('@')
+        if (atIndex <= 0) {
+            return null
+        }
+        val userInfo = decodeUriComponent(hostPart.substring(0, atIndex))
+        val hostPort = hostPart.substring(atIndex + 1)
+        val (host, port) = splitHostPort(hostPort, 443)
+        val uuid = userInfo.substringBefore(":", userInfo).takeIf { it.isNotBlank() } ?: return null
+        val passwordFromUser = userInfo.substringAfter(":", "").takeIf { it.isNotBlank() }
+        val queryMap = parseQueryParameters(queryPart)
+        val node = JSONObject()
+            .put("type", "tuic")
+            .put("tag", name)
+            .put("server", host)
+            .put("server_port", port)
+            .put("uuid", uuid)
+            .put("tls", buildTlsFromQuery(queryMap))
+        val password = passwordFromUser ?: queryMap["password"]
+        password?.takeIf { it.isNotBlank() }?.let { node.put("password", it) }
+        queryMap["congestion_control"]?.takeIf { it.isNotBlank() }
+            ?.let { node.put("congestion_control", it) }
+        queryMap["udp_relay_mode"]?.takeIf { it.isNotBlank() }
+            ?.let { node.put("udp_relay_mode", it) }
+        parseBoolean(queryMap["udp_over_stream"])?.let { node.put("udp_over_stream", it) }
+        parseBoolean(queryMap["zero_rtt_handshake"])?.let { node.put("zero_rtt_handshake", it) }
+        queryMap["heartbeat"]?.takeIf { it.isNotBlank() }?.let { node.put("heartbeat", it) }
+        queryMap["network"]?.lowercase()?.takeIf { it == "tcp" || it == "udp" }
+            ?.let { node.put("network", it) }
+        return node
+    }
+
     private fun splitHostPort(value: String, defaultPort: Int): Pair<String, Int> {
         if (value.startsWith("[")) {
             val end = value.indexOf(']')
@@ -623,6 +824,36 @@ object SubscriptionRepository {
         return runCatching { URLDecoder.decode(value, "UTF-8") }.getOrNull() ?: value
     }
 
+    private fun decodeSsrParam(value: String?): String? {
+        if (value.isNullOrBlank()) return null
+        val decoded = decodeBase64(value)?.toString(Charsets.UTF_8)
+        return decoded ?: decodeUriComponent(value)
+    }
+
+    private fun buildTlsFromQuery(queryMap: Map<String, String>): JSONObject {
+        val tls = JSONObject().put("enabled", true)
+        val serverName = queryMap["sni"]
+            ?: queryMap["peer"]
+            ?: queryMap["server_name"]
+            ?: queryMap["servername"]
+        serverName?.takeIf { it.isNotBlank() }?.let { tls.put("server_name", it) }
+        parseBoolean(
+            queryMap["allowInsecure"]
+                ?: queryMap["allow_insecure"]
+                ?: queryMap["insecure"]
+                ?: queryMap["skip-cert-verify"]
+        )?.let { tls.put("insecure", it) }
+        queryMap["alpn"]?.takeIf { it.isNotBlank() }?.let { value ->
+            val list = value.split(",").mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
+            if (list.isNotEmpty()) {
+                val alpnArray = JSONArray()
+                list.forEach { alpnArray.put(it) }
+                tls.put("alpn", alpnArray)
+            }
+        }
+        return tls
+    }
+
     private fun parseBoolean(value: String?): Boolean? {
         if (value.isNullOrBlank()) return null
         return when (value.lowercase()) {
@@ -630,5 +861,10 @@ object SubscriptionRepository {
             "0", "false", "no", "off" -> false
             else -> null
         }
+    }
+
+    private fun parseNumber(value: String?): Number? {
+        if (value.isNullOrBlank()) return null
+        return value.toIntOrNull() ?: value.toDoubleOrNull()
     }
 }

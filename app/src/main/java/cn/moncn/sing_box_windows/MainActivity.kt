@@ -240,6 +240,28 @@ class MainActivity : ComponentActivity() {
                             showSyncResult(result)
                         }
                     },
+                    onImportNodes = { name, content ->
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                SubscriptionRepository.importLocal(context, name, content)
+                            }
+                            if (!result.ok) {
+                                showMessage(
+                                    title = "导入失败",
+                                    message = result.message,
+                                    tone = MessageTone.Error
+                                )
+                                return@launch
+                            }
+                            subscriptions = result.state
+                            val tone = if (result.warnings.isNotEmpty()) {
+                                MessageTone.Warning
+                            } else {
+                                MessageTone.Success
+                            }
+                            showMessage("导入完成", result.message, tone)
+                        }
+                    },
                     onEditSubscription = { id, name, url ->
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {

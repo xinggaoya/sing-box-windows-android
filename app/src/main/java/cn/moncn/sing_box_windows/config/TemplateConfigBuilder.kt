@@ -720,25 +720,54 @@ object TemplateConfigBuilder {
 
     private fun buildTransport(proxy: Map<*, *>): JSONObject? {
         val network = proxy["network"]?.toString()?.lowercase() ?: return null
-        if (network != "ws") {
-            return null
-        }
-        val opts = proxy["ws-opts"] as? Map<*, *>
-        val path = opts?.get("path")?.toString() ?: "/"
-        val headers = opts?.get("headers") as? Map<*, *>
-        val transport = JSONObject()
-            .put("type", "ws")
-            .put("path", path)
-        if (headers != null) {
-            val headerJson = JSONObject()
-            headers.forEach { (key, value) ->
-                if (key != null && value != null) {
-                    headerJson.put(key.toString(), value.toString())
+        return when (network) {
+            "ws" -> {
+                val opts = proxy["ws-opts"] as? Map<*, *>
+                val path = opts?.get("path")?.toString() ?: "/"
+                val headers = opts?.get("headers") as? Map<*, *>
+                val transport = JSONObject()
+                    .put("type", "ws")
+                    .put("path", path)
+                if (headers != null) {
+                    val headerJson = JSONObject()
+                    headers.forEach { (key, value) ->
+                        if (key != null && value != null) {
+                            headerJson.put(key.toString(), value.toString())
+                        }
+                    }
+                    transport.put("headers", headerJson)
                 }
+                transport
             }
-            transport.put("headers", headerJson)
+            "grpc" -> {
+                val opts = proxy["grpc-opts"] as? Map<*, *>
+                val serviceName = opts?.get("grpc-service-name")?.toString()
+                    ?: opts?.get("service-name")?.toString()
+                val transport = JSONObject().put("type", "grpc")
+                serviceName?.takeIf { it.isNotBlank() }?.let { transport.put("service_name", it) }
+                transport
+            }
+            "h2" -> {
+                val opts = proxy["h2-opts"] as? Map<*, *>
+                val transport = JSONObject().put("type", "http")
+                val hostValue = opts?.get("host")
+                val hosts = when (hostValue) {
+                    is List<*> -> hostValue.mapNotNull { it?.toString()?.takeIf { h -> h.isNotBlank() } }
+                    null -> emptyList()
+                    else -> listOf(hostValue.toString()).filter { it.isNotBlank() }
+                }
+                if (hosts.isNotEmpty()) {
+                    val hostArray = JSONArray()
+                    hosts.forEach { hostArray.put(it) }
+                    transport.put("host", hostArray)
+                }
+                opts?.get("path")?.toString()?.takeIf { it.isNotBlank() }?.let {
+                    transport.put("path", it)
+                }
+                transport
+            }
+            else -> null
         }
-        return transport
     }
 
     private fun isGroupOrSystemOutbound(type: String): Boolean {
