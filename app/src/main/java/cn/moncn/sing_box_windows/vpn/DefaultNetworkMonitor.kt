@@ -89,7 +89,7 @@ object DefaultNetworkMonitor {
         if (network == null) {
             return null
         }
-        val candidates = connectivity.allNetworks.mapNotNull { candidate ->
+        val candidates = connectivity.allNetworksCompat().mapNotNull { candidate ->
             val caps = connectivity.getNetworkCapabilities(candidate) ?: return@mapNotNull null
             if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@mapNotNull null
             if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null

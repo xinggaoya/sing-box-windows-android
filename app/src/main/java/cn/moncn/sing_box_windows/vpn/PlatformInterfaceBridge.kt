@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiInfo
 import android.os.Build
 import android.os.Process
 import android.system.OsConstants
@@ -95,7 +96,7 @@ class PlatformInterfaceBridge(
     }
 
     override fun getInterfaces(): NetworkInterfaceIterator {
-        val networks = connectivity?.allNetworks ?: emptyArray()
+        val networks = connectivity?.allNetworksCompat() ?: emptyArray()
         val networkInterfaces = NetworkInterface.getNetworkInterfaces().toList()
         val interfaces = mutableListOf<LibboxNetworkInterface>()
         for (network in networks) {
@@ -141,7 +142,7 @@ class PlatformInterfaceBridge(
     override fun clearDNSCache() = Unit
 
     override fun readWIFIState(): WIFIState? {
-        val wifiInfo = vpnService.wifiManager?.connectionInfo ?: return null
+        val wifiInfo = resolveWifiInfo() ?: return null
         var ssid = wifiInfo.ssid
         if (ssid == "<unknown ssid>") {
             return WIFIState("", "")
@@ -199,5 +200,15 @@ class PlatformInterfaceBridge(
         } else {
             "${address.hostAddress}/${networkPrefixLength}"
         }
+    }
+
+    private fun resolveWifiInfo(): WifiInfo? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val active = connectivity?.activeNetwork ?: return null
+            val caps = connectivity.getNetworkCapabilities(active) ?: return null
+            return caps.transportInfo as? WifiInfo
+        }
+        @Suppress("DEPRECATION")
+        return vpnService.wifiManager?.connectionInfo
     }
 }

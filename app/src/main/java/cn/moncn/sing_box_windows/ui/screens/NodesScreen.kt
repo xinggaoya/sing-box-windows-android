@@ -1,17 +1,18 @@
 package cn.moncn.sing_box_windows.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,10 +29,12 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
 import cn.moncn.sing_box_windows.core.OutboundItemModel
 import cn.moncn.sing_box_windows.ui.components.AppCard
+import cn.moncn.sing_box_windows.ui.components.AppCardShape
 import cn.moncn.sing_box_windows.ui.components.StatusBadge
 
 @Composable
@@ -39,30 +43,39 @@ fun NodesScreen(
     onSelectNode: (String, String) -> Unit,
     onTestNode: (String) -> Unit
 ) {
-    // Keep track of expanded groups locally
     val expandedStates = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Initialize first group as expanded if map is empty and groups exist
     if (expandedStates.isEmpty() && groups.isNotEmpty()) {
         expandedStates[groups.first().tag] = true
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-         item {
-            Text(
-                text = "代理分组",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "节点分组",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = "选择更合适的出口与策略",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         if (groups.isEmpty()) {
             item {
                 AppCard(modifier = Modifier.fillMaxWidth()) {
-                    Text("暂无节点分组，请先添加订阅并连接。", color = MaterialTheme.colorScheme.secondary)
+                    Text(
+                        text = "暂无节点分组，请先添加订阅并连接。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -77,6 +90,10 @@ fun NodesScreen(
                 onTestNode = onTestNode
             )
         }
+
+        item {
+            Spacer(modifier = Modifier.size(8.dp))
+        }
     }
 }
 
@@ -88,36 +105,41 @@ fun NodeGroupCard(
     onSelectNode: (String) -> Unit,
     onTestNode: (String) -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
     AppCard(modifier = Modifier.fillMaxWidth()) {
-        Column {
-            // Header
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onToggle() }
-                    .padding(vertical = 4.dp), // Check padding vs Card internal padding
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = group.tag, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "${group.type} • ${group.selected}", 
-                        style = MaterialTheme.typography.bodySmall, 
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "${group.type} • 已选 ${group.selected}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = onToggle) {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        contentDescription = if (isExpanded) "折叠" else "展开"
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusBadge(
+                        text = "${group.items.size} 个节点",
+                        color = scheme.secondary
                     )
+                    IconButton(onClick = onToggle) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (isExpanded) "折叠" else "展开"
+                        )
+                    }
                 }
             }
 
             if (isExpanded) {
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     group.items.forEach { node ->
                         NodeItemRow(
                             node = node,
@@ -141,41 +163,58 @@ fun NodeItemRow(
     onSelect: () -> Unit,
     onTest: () -> Unit
 ) {
-    Row(
+    val scheme = MaterialTheme.colorScheme
+    val delayMs = node.delayMs
+    val delayColor = when {
+        delayMs == null || delayMs <= 0 -> scheme.outline
+        delayMs < 150 -> scheme.secondary
+        delayMs < 500 -> scheme.tertiary
+        else -> scheme.error
+    }
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .background(Color.Transparent)
+            .clickable(enabled = selectable) { onSelect() },
+        color = if (isSelected) scheme.secondaryContainer else scheme.surface,
+        shape = AppCardShape,
+        border = BorderStroke(1.dp, if (isSelected) scheme.secondary else scheme.outline.copy(alpha = 0.2f))
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = node.tag, style = MaterialTheme.typography.bodyMedium)
-            if (node.delayMs != null && node.delayMs > 0) {
-                 Text(
-                    text = "${node.delayMs}ms", 
-                    style = MaterialTheme.typography.labelSmall, 
-                    color = if (node.delayMs < 500) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = node.tag, style = MaterialTheme.typography.bodyLarge)
+                if (delayMs != null && delayMs > 0) {
+                    StatusBadge(text = "${delayMs}ms", color = delayColor)
+                } else {
+                    Text(
+                        text = "延迟未知",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
             }
-        }
 
-        Row {
-             IconButton(onClick = onTest, enabled = !node.isTesting) {
-                Icon(Icons.Rounded.Speed, contentDescription = "测试延迟", modifier = Modifier.padding(4.dp))
-            }
-            if (selectable) {
-                IconButton(onClick = onSelect, enabled = !isSelected) {
-                    if (isSelected) {
-                        Icon(Icons.Rounded.Check, contentDescription = "已选择", tint = MaterialTheme.colorScheme.primary)
-                    } else {
-                        // Empty ring or check logic? Just leave it as select button
-                        // Or maybe a radio button style logic?
-                        // Let's use a simple radio icon or check
-                         Icon(Icons.Rounded.Check, contentDescription = "选择", tint = MaterialTheme.colorScheme.outline.copy(alpha=0.3f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onTest, enabled = !node.isTesting) {
+                    Icon(
+                        imageVector = Icons.Rounded.Speed,
+                        contentDescription = "测试延迟"
+                    )
+                }
+                if (selectable) {
+                    IconButton(onClick = onSelect, enabled = !isSelected) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = if (isSelected) "已选择" else "选择",
+                            tint = if (isSelected) scheme.secondary else scheme.outline
+                        )
                     }
                 }
             }

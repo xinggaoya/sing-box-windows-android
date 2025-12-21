@@ -283,7 +283,7 @@ class AppVpnService : android.net.VpnService() {
 
     private fun applyUnderlyingNetworks(builder: Builder) {
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
-        val networks = connectivity.allNetworks.filter { network ->
+        val networks = connectivity.allNetworksCompat().filter { network ->
             val caps = connectivity.getNetworkCapabilities(network) ?: return@filter false
             !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         }

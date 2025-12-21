@@ -132,9 +132,10 @@ object ConfigRepository {
             root.put("route", it)
             changed = true
         }
+        val resolvedGroupTag = firstGroupTag ?: return changed
         val finalTag = route.optString("final")
-        if (firstGroupTag != null && (finalTag.isBlank() || finalTag == "DIRECT")) {
-            route.put("final", firstGroupTag)
+        if (finalTag.isBlank() || finalTag == "DIRECT") {
+            route.put("final", resolvedGroupTag)
             changed = true
         }
 
