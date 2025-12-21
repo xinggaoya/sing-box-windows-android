@@ -30,6 +30,21 @@ object ConfigRepository {
         file.writeText(normalized)
     }
 
+    fun saveConfigWithSettings(context: Context, json: String, settings: AppSettings) {
+        val file = File(context.filesDir, FILE_NAME)
+        val normalized = normalizeConfig(json)
+        val applied = ConfigSettingsApplier.applySettings(normalized, settings)
+        file.writeText(applied)
+    }
+
+    fun applySettings(context: Context, settings: AppSettings) {
+        val file = File(context.filesDir, FILE_NAME)
+        val raw = if (file.exists()) file.readText() else ConfigDefaults.defaultConfigJson()
+        val normalized = normalizeConfig(raw)
+        val applied = ConfigSettingsApplier.applySettings(normalized, settings)
+        file.writeText(applied)
+    }
+
     fun convertClashAndSave(context: Context, clashYaml: String): ConversionResult {
         val result = ClashConverter.convert(clashYaml)
         saveConfig(context, result.json)

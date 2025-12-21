@@ -123,7 +123,7 @@ object SubscriptionRepository {
                 state = load(context)
             )
         }
-        ConfigRepository.saveConfig(context, parsed.configJson)
+        saveConfigWithSettings(context, parsed.configJson)
         val state = load(context)
         val cleanName = name.trim()
         val displayName = cleanName.ifBlank { deriveLocalName(state.items.count { it.isLocal } + 1) }
@@ -259,7 +259,7 @@ object SubscriptionRepository {
                 if (!result.ok || result.configJson == null) {
                     throw IOException(result.error ?: "本地节点解析失败")
                 }
-                ConfigRepository.saveConfig(context, result.configJson)
+                saveConfigWithSettings(context, result.configJson)
                 val message = if (result.warnings.isNotEmpty()) {
                     "本地节点已应用，但有 ${result.warnings.size} 条警告"
                 } else {
@@ -272,7 +272,7 @@ object SubscriptionRepository {
             if (!result.ok || result.configJson == null) {
                 throw IOException(result.error ?: "订阅解析失败")
             }
-            ConfigRepository.saveConfig(context, result.configJson)
+            saveConfigWithSettings(context, result.configJson)
             val message = if (result.warnings.isNotEmpty()) {
                 "订阅同步完成，但有 ${result.warnings.size} 条警告"
             } else {
@@ -326,6 +326,11 @@ object SubscriptionRepository {
         }
         root.put("items", items)
         file.writeText(root.toString(2))
+    }
+
+    private fun saveConfigWithSettings(context: Context, json: String) {
+        val settings = SettingsRepository.load(context)
+        ConfigRepository.saveConfigWithSettings(context, json, settings)
     }
 
     private fun deriveName(url: String, index: Int): String {

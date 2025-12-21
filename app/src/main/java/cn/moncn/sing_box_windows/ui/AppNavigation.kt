@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -29,6 +30,7 @@ import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.vpn.VpnState
 import cn.moncn.sing_box_windows.ui.screens.HomeScreen
 import cn.moncn.sing_box_windows.ui.screens.NodesScreen
+import cn.moncn.sing_box_windows.ui.screens.SettingsScreen
 import cn.moncn.sing_box_windows.ui.screens.SubscriptionScreen
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.graphics.Color
@@ -38,6 +40,7 @@ sealed class Screen(val route: String, val label: String, val icon: androidx.com
     object Home : Screen("home", "首页", Icons.Rounded.Home)
     object Subscriptions : Screen("subscriptions", "订阅", Icons.AutoMirrored.Rounded.List)
     object Nodes : Screen("nodes", "节点", Icons.Rounded.Dns)
+    object Settings : Screen("settings", "设置", Icons.Rounded.Settings)
 }
 
 @Composable
@@ -87,7 +90,7 @@ fun AppNavigation(
         "点击连接"
     }
 
-    val screens = listOf(Screen.Home, Screen.Subscriptions, Screen.Nodes)
+    val screens = listOf(Screen.Home, Screen.Subscriptions, Screen.Nodes, Screen.Settings)
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -166,6 +169,11 @@ fun AppNavigation(
                         groups = groups,
                         onSelectNode = onSelectNode,
                         onTestNode = onTestNode
+                    )
+                }
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        onShowMessage = onShowMessage
                     )
                 }
             }

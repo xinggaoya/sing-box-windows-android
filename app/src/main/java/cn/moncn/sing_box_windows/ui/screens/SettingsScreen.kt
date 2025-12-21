@@ -1,0 +1,454 @@
+package cn.moncn.sing_box_windows.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import cn.moncn.sing_box_windows.config.AppSettings
+import cn.moncn.sing_box_windows.config.AppSettingsDefaults
+import cn.moncn.sing_box_windows.config.ConfigRepository
+import cn.moncn.sing_box_windows.config.SettingsRepository
+import cn.moncn.sing_box_windows.ui.MessageDialogState
+import cn.moncn.sing_box_windows.ui.MessageTone
+import cn.moncn.sing_box_windows.ui.MessageTone
+import cn.moncn.sing_box_windows.ui.components.AppCard
+import cn.moncn.sing_box_windows.ui.components.AppSection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun SettingsScreen(
+    onShowMessage: (MessageDialogState) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var currentSettings by remember { mutableStateOf(AppSettings()) }
+    var logLevel by remember { mutableStateOf(AppSettingsDefaults.LOG_LEVEL) }
+    var logTimestamp by remember { mutableStateOf(AppSettingsDefaults.LOG_TIMESTAMP) }
+    var dnsStrategy by remember { mutableStateOf(AppSettingsDefaults.DNS_STRATEGY) }
+    var dnsCacheEnabled by remember { mutableStateOf(AppSettingsDefaults.DNS_CACHE_ENABLED) }
+    var dnsIndependentCache by remember {
+        mutableStateOf(AppSettingsDefaults.DNS_INDEPENDENT_CACHE)
+    }
+    var tunMtuInput by remember { mutableStateOf(AppSettingsDefaults.TUN_MTU.toString()) }
+    var tunAutoRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_AUTO_ROUTE) }
+    var tunStrictRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_STRICT_ROUTE) }
+    var httpProxyEnabled by remember { mutableStateOf(AppSettingsDefaults.HTTP_PROXY_ENABLED) }
+    var mixedPortInput by remember { mutableStateOf(AppSettingsDefaults.MIXED_PORT.toString()) }
+    var socksPortInput by remember { mutableStateOf(AppSettingsDefaults.SOCKS_PORT.toString()) }
+    var cacheFileEnabled by remember { mutableStateOf(AppSettingsDefaults.CACHE_FILE_ENABLED) }
+    var clashApiEnabled by remember { mutableStateOf(AppSettingsDefaults.CLASH_API_ENABLED) }
+    var clashApiAddress by remember { mutableStateOf(AppSettingsDefaults.CLASH_API_ADDRESS) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) { SettingsRepository.load(context) }
+        currentSettings = loaded
+        logLevel = loaded.logLevel
+        logTimestamp = loaded.logTimestamp
+        dnsStrategy = loaded.dnsStrategy
+        dnsCacheEnabled = loaded.dnsCacheEnabled
+        dnsIndependentCache = loaded.dnsIndependentCache
+        tunMtuInput = loaded.tunMtu.toString()
+        tunAutoRoute = loaded.tunAutoRoute
+        tunStrictRoute = loaded.tunStrictRoute
+        httpProxyEnabled = loaded.httpProxyEnabled
+        mixedPortInput = loaded.mixedInboundPort.toString()
+        socksPortInput = loaded.socksInboundPort.toString()
+        cacheFileEnabled = loaded.cacheFileEnabled
+        clashApiEnabled = loaded.clashApiEnabled
+        clashApiAddress = loaded.clashApiAddress
+    }
+
+    fun saveSettings() {
+        if (isSaving) return
+        val normalizedMtu = tunMtuInput.toIntOrNull()
+            ?.coerceIn(1280, 9000) ?: currentSettings.tunMtu
+        val normalizedMixedPort = mixedPortInput.toIntOrNull()
+            ?.coerceIn(1024, 65535) ?: currentSettings.mixedInboundPort
+        val normalizedSocksPort = socksPortInput.toIntOrNull()
+            ?.coerceIn(1024, 65535) ?: currentSettings.socksInboundPort
+        val normalizedClashApiAddress = clashApiAddress.trim().ifBlank {
+            currentSettings.clashApiAddress
+        }
+        val newSettings = currentSettings.copy(
+            logLevel = logLevel,
+            logTimestamp = logTimestamp,
+            dnsStrategy = dnsStrategy,
+            dnsCacheEnabled = dnsCacheEnabled,
+            dnsIndependentCache = dnsIndependentCache,
+            tunMtu = normalizedMtu,
+            tunAutoRoute = tunAutoRoute,
+            tunStrictRoute = tunStrictRoute,
+            httpProxyEnabled = httpProxyEnabled,
+            mixedInboundPort = normalizedMixedPort,
+            socksInboundPort = normalizedSocksPort,
+            cacheFileEnabled = cacheFileEnabled,
+            clashApiEnabled = clashApiEnabled,
+            clashApiAddress = normalizedClashApiAddress
+        )
+        isSaving = true
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                SettingsRepository.save(context, newSettings)
+                ConfigRepository.applySettings(context, newSettings)
+            }
+            currentSettings = newSettings
+            tunMtuInput = newSettings.tunMtu.toString()
+            mixedPortInput = newSettings.mixedInboundPort.toString()
+            socksPortInput = newSettings.socksInboundPort.toString()
+            clashApiAddress = newSettings.clashApiAddress
+            isSaving = false
+            onShowMessage(
+                MessageDialogState(
+                    title = "设置已保存",
+                    message = "请断开后重新连接以应用新配置。",
+                    tone = MessageTone.Success
+                )
+            )
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "设置",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = "调节内核行为与本地代理参数",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        item {
+            AppSection(title = { Text("内核日志", style = MaterialTheme.typography.titleMedium) }) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SettingDropdownRow(
+                            title = "日志级别",
+                            description = "决定输出详细程度",
+                            options = LOG_LEVELS,
+                            labels = LOG_LEVEL_LABELS,
+                            selected = logLevel,
+                            onSelected = { logLevel = it }
+                        )
+                        SettingSwitchRow(
+                            title = "时间戳",
+                            description = "记录日志时追加时间信息",
+                            checked = logTimestamp,
+                            onCheckedChange = { logTimestamp = it }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            AppSection(title = { Text("DNS", style = MaterialTheme.typography.titleMedium) }) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SettingDropdownRow(
+                            title = "解析策略",
+                            description = "控制 IPv4/IPv6 优先级",
+                            options = DNS_STRATEGIES,
+                            labels = DNS_STRATEGY_LABELS,
+                            selected = dnsStrategy,
+                            onSelected = { dnsStrategy = it }
+                        )
+                        SettingSwitchRow(
+                            title = "启用缓存",
+                            description = "缓存 DNS 解析结果以提升速度",
+                            checked = dnsCacheEnabled,
+                            onCheckedChange = { dnsCacheEnabled = it }
+                        )
+                        SettingSwitchRow(
+                            title = "独立缓存",
+                            description = "各 DNS 服务器使用独立缓存",
+                            checked = dnsIndependentCache,
+                            onCheckedChange = { dnsIndependentCache = it }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            AppSection(title = { Text("TUN / VPN", style = MaterialTheme.typography.titleMedium) }) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SettingNumberField(
+                            title = "MTU",
+                            description = "推荐范围 1280-9000",
+                            value = tunMtuInput,
+                            onValueChange = { tunMtuInput = it },
+                            placeholder = "例如 9000"
+                        )
+                        SettingSwitchRow(
+                            title = "自动路由",
+                            description = "将默认路由指向 TUN",
+                            checked = tunAutoRoute,
+                            onCheckedChange = { tunAutoRoute = it }
+                        )
+                        SettingSwitchRow(
+                            title = "严格路由",
+                            description = "限制非路由流量通过 TUN",
+                            checked = tunStrictRoute,
+                            onCheckedChange = { tunStrictRoute = it }
+                        )
+                        SettingSwitchRow(
+                            title = "系统 HTTP 代理",
+                            description = "自动配置系统 HTTP 代理",
+                            checked = httpProxyEnabled,
+                            onCheckedChange = { httpProxyEnabled = it }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            AppSection(title = { Text("本地代理", style = MaterialTheme.typography.titleMedium) }) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SettingNumberField(
+                            title = "Mixed 端口",
+                            description = "本地 HTTP/SOCKS 混合端口",
+                            value = mixedPortInput,
+                            onValueChange = { mixedPortInput = it },
+                            placeholder = "例如 1082"
+                        )
+                        SettingNumberField(
+                            title = "SOCKS 端口",
+                            description = "本地 SOCKS 代理端口",
+                            value = socksPortInput,
+                            onValueChange = { socksPortInput = it },
+                            placeholder = "例如 7888"
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            AppSection(title = { Text("实验功能", style = MaterialTheme.typography.titleMedium) }) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SettingSwitchRow(
+                            title = "规则缓存",
+                            description = "缓存规则文件减少重复下载",
+                            checked = cacheFileEnabled,
+                            onCheckedChange = { cacheFileEnabled = it }
+                        )
+                        SettingSwitchRow(
+                            title = "Clash API",
+                            description = "启用外部控制端口",
+                            checked = clashApiEnabled,
+                            onCheckedChange = { clashApiEnabled = it }
+                        )
+                        if (clashApiEnabled) {
+                            SettingTextField(
+                                title = "控制地址",
+                                description = "用于面板或外部控制",
+                                value = clashApiAddress,
+                                onValueChange = { clashApiAddress = it },
+                                placeholder = "127.0.0.1:9090"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Button(
+                onClick = { saveSettings() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isSaving
+            ) {
+                Text(if (isSaving) "保存中..." else "保存并应用")
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun SettingDropdownRow(
+    title: String,
+    description: String,
+    options: List<String>,
+    labels: Map<String, String>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = labels[selected] ?: selected
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Box {
+            TextButton(onClick = { expanded = true }) {
+                Text(label)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(labels[option] ?: option) },
+                        onClick = {
+                            onSelected(option)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingNumberField(
+    title: String,
+    description: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = { input -> onValueChange(input.filter { it.isDigit() }) },
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+    }
+}
+
+@Composable
+private fun SettingTextField(
+    title: String,
+    description: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private val LOG_LEVELS = listOf("trace", "debug", "info", "warn", "error")
+private val LOG_LEVEL_LABELS = mapOf(
+    "trace" to "Trace",
+    "debug" to "Debug",
+    "info" to "Info",
+    "warn" to "Warn",
+    "error" to "Error"
+)
+
+private val DNS_STRATEGIES = listOf("prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
+private val DNS_STRATEGY_LABELS = mapOf(
+    "prefer_ipv4" to "优先 IPv4",
+    "prefer_ipv6" to "优先 IPv6",
+    "ipv4_only" to "仅 IPv4",
+    "ipv6_only" to "仅 IPv6"
+)
