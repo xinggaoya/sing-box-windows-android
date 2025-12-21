@@ -37,7 +37,6 @@ import cn.moncn.sing_box_windows.config.ConfigRepository
 import cn.moncn.sing_box_windows.config.SettingsRepository
 import cn.moncn.sing_box_windows.ui.MessageDialogState
 import cn.moncn.sing_box_windows.ui.MessageTone
-import cn.moncn.sing_box_windows.ui.MessageTone
 import cn.moncn.sing_box_windows.ui.components.AppCard
 import cn.moncn.sing_box_windows.ui.components.AppSection
 import kotlinx.coroutines.Dispatchers
