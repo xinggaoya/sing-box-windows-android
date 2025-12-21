@@ -8,12 +8,15 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 
 private val DarkColorScheme = darkColorScheme(
     primary = Ocean400,
-    secondary = Coral400,
-    tertiary = Mint400,
+    secondary = Mint400,
+    tertiary = Coral400,
     background = Midnight950,
     surface = Midnight900,
     surfaceVariant = Midnight800,
@@ -24,31 +27,29 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = Cloud050,
     onSurfaceVariant = Cloud200,
     error = Rose500,
-    onError = Midnight950
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = Ocean600,
-    secondary = Coral500,
-    tertiary = Mint500,
-    background = Cloud050,
-    surface = Cloud000,
+    secondary = Mint500,
+    tertiary = Coral500,
+    background = Cloud050, // Slightly off-white
+    surface = Color.White,
     surfaceVariant = Cloud100,
-    onPrimary = Cloud000,
-    onSecondary = Cloud000,
-    onTertiary = Cloud000,
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
     onBackground = Midnight900,
     onSurface = Midnight900,
     onSurfaceVariant = Midnight800,
     error = Rose500,
-    onError = Cloud000
 )
 
 @Composable
 fun SingboxwindowsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -60,6 +61,10 @@ fun SingboxwindowsTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+
+    // Optional: Edge-to-Edge status bar coloring could be handled here or in MainActivity.
+    // Assuming MainActivity handles logic, but Composable side-effects are good for dynamic theme change.
+    // For now, I will keep it simple as the original code didn't have heavy logic here.
 
     MaterialTheme(
         colorScheme = colorScheme,

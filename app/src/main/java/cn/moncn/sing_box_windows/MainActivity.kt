@@ -24,6 +24,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import cn.moncn.sing_box_windows.config.SubscriptionRepository
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.config.SubscriptionUpdateResult
@@ -32,7 +36,7 @@ import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.OutboundGroupManager
 import cn.moncn.sing_box_windows.ui.MessageDialogState
 import cn.moncn.sing_box_windows.ui.MessageTone
-import cn.moncn.sing_box_windows.ui.MainScreen
+import cn.moncn.sing_box_windows.ui.AppNavigation
 import cn.moncn.sing_box_windows.ui.theme.SingboxwindowsTheme
 import cn.moncn.sing_box_windows.vpn.VpnController
 import cn.moncn.sing_box_windows.vpn.VpnState
@@ -117,7 +121,7 @@ class MainActivity : ComponentActivity() {
                     if (result.resultCode == Activity.RESULT_OK) {
                         VpnController.start(context)
                     } else {
-                        VpnStateStore.update(VpnState.ERROR, "VPN 权限被拒绝")
+                        VpnStateStore.update(VpnState.ERROR, "VPN permission denied")
                     }
                 }
 
@@ -126,8 +130,8 @@ class MainActivity : ComponentActivity() {
                 ) { granted ->
                     if (!granted) {
                         showMessage(
-                            title = "通知权限",
-                            message = "通知权限被拒绝，前台通知可能无法显示。",
+                            title = "Notification Permission",
+                            message = "Permission denied. Foreground notification may not appear.",
                             tone = MessageTone.Warning
                         )
                         pendingConnect = false
@@ -155,7 +159,30 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                MainScreen(
+                if (dialogMessage != null) {
+                    AlertDialog(
+                        onDismissRequest = { dialogMessage = null },
+                        title = { Text(dialogMessage!!.title) },
+                        text = { Text(dialogMessage!!.message) },
+                        confirmButton = {
+                            Button(onClick = {
+                                dialogMessage?.onConfirm?.invoke()
+                                dialogMessage = null
+                            }) {
+                                Text(dialogMessage!!.confirmText)
+                            }
+                        },
+                        dismissButton = {
+                            if (dialogMessage?.dismissText != null) {
+                                TextButton(onClick = { dialogMessage = null }) {
+                                    Text(dialogMessage!!.dismissText!!)
+                                }
+                            }
+                        }
+                    )
+                }
+
+                AppNavigation(
                     state = state,
                     coreStatus = coreStatus,
                     coreVersion = coreVersion,
@@ -164,8 +191,6 @@ class MainActivity : ComponentActivity() {
                     urlInput = urlInput,
                     updatingId = updatingId,
                     groups = groups,
-                    dialogMessage = dialogMessage,
-                    onDismissDialog = { dialogMessage = null },
                     onShowMessage = { dialogMessage = it },
                     onConnect = {
                         val notificationsEnabled =
@@ -180,15 +205,15 @@ class MainActivity : ComponentActivity() {
                                 if (!granted) {
                                     pendingConnect = true
                                     notificationLauncher.launch(permission)
-                                    return@MainScreen
+                                    return@AppNavigation
                                 }
                             }
                             showMessage(
-                                title = "通知设置",
-                                message = "请在系统设置中允许通知，否则无法显示常驻通知。",
+                                title = "Notification Settings",
+                                message = "Please enable notifications in system settings.",
                                 tone = MessageTone.Warning,
-                                confirmText = "去设置",
-                                dismissText = "稍后",
+                                confirmText = "Open Settings",
+                                dismissText = "Later",
                                 onConfirm = { openNotificationSettings(context) }
                             )
                         }
@@ -200,25 +225,12 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onDisconnect = { VpnController.stop(context) },
-                    onNameChange = { nameInput = it },
-                    onUrlChange = { urlInput = it },
-                    onAddSubscription = {
-                        val trimmedUrl = urlInput.trim()
-                        if (trimmedUrl.isBlank()) {
-                            showMessage(
-                                title = "提示",
-                                message = "请输入订阅地址",
-                                tone = MessageTone.Warning
-                            )
-                            return@MainScreen
-                        }
+                    onAddSubscription = { name, url ->
                         scope.launch {
                             val addResult = withContext(Dispatchers.IO) {
-                                SubscriptionRepository.add(context, nameInput, trimmedUrl)
+                                SubscriptionRepository.add(context, name, url)
                             }
                             subscriptions = addResult.state
-                            nameInput = ""
-                            urlInput = ""
                             updatingId = addResult.item.id
                             val result = withContext(Dispatchers.IO) {
                                 SubscriptionRepository.activate(context, addResult.item.id)
@@ -234,21 +246,20 @@ class MainActivity : ComponentActivity() {
                                 SubscriptionRepository.edit(context, id, name, url)
                             }
                             if (!result.ok) {
-                                showMessage("编辑失败", result.message, MessageTone.Error)
+                                showMessage("Edit Failed", result.message, MessageTone.Error)
                                 return@launch
                             }
                             subscriptions = result.state
                             if (result.urlChanged && result.state.selectedId == id) {
                                 showMessage(
-                                    title = "订阅已更新",
-                                    message = "当前订阅地址已变更，是否立即同步？",
+                                    title = "Subscription Updated",
+                                    message = "URL changed. Update now?",
                                     tone = MessageTone.Warning,
-                                    confirmText = "立即同步",
-                                    dismissText = "稍后",
+                                    confirmText = "Update Now",
+                                    dismissText = "Later",
                                     onConfirm = {
                                         scope.launch {
-                                            val currentId = subscriptions.selectedId
-                                            updatingId = currentId
+                                            updatingId = id
                                             val syncResult = withContext(Dispatchers.IO) {
                                                 SubscriptionRepository.updateSelected(context)
                                             }
@@ -258,13 +269,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 )
-                            } else {
-                                val message = if (result.urlChanged) {
-                                    "订阅地址已更新，下次启用将使用新地址。"
-                                } else {
-                                    "订阅名称已更新。"
-                                }
-                                showMessage("订阅已保存", message, MessageTone.Success)
                             }
                         }
                     },
@@ -284,27 +288,31 @@ class MainActivity : ComponentActivity() {
                             subscriptions = withContext(Dispatchers.IO) {
                                 SubscriptionRepository.remove(context, id)
                             }
-                            showMessage("订阅已删除", "订阅已从列表中移除。", MessageTone.Success)
+                            showMessage("Deleted", "Subscription removed.", MessageTone.Success)
                         }
                     },
-                    onUpdateSubscription = {
-                        if (subscriptions.selectedId == null) {
-                            showMessage(
-                                title = "提示",
-                                message = "请先启用订阅",
-                                tone = MessageTone.Warning
-                            )
-                            return@MainScreen
-                        }
-                        scope.launch {
-                            val currentId = subscriptions.selectedId
-                            updatingId = currentId
-                            val result = withContext(Dispatchers.IO) {
-                                SubscriptionRepository.updateSelected(context)
+                    onUpdateSubscription = { id ->
+                        // Adapted to use ID
+                        if (id == subscriptions.selectedId) {
+                            scope.launch {
+                                updatingId = id
+                                val result = withContext(Dispatchers.IO) {
+                                    SubscriptionRepository.updateSelected(context)
+                                }
+                                subscriptions = result.state
+                                updatingId = null
+                                showSyncResult(result)
                             }
-                            subscriptions = result.state
-                            updatingId = null
-                            showSyncResult(result)
+                        } else {
+                             scope.launch {
+                                updatingId = id
+                                val result = withContext(Dispatchers.IO) {
+                                    SubscriptionRepository.activate(context, id)
+                                }
+                                subscriptions = result.state
+                                updatingId = null
+                                showSyncResult(result)
+                            }
                         }
                     },
                     onSelectNode = { groupTag, outboundTag ->
@@ -317,51 +325,17 @@ class MainActivity : ComponentActivity() {
                             val result = OutboundGroupManager.urlTest(outboundTag)
                             val errorMessage = result.exceptionOrNull()?.message
                             if (!errorMessage.isNullOrBlank()) {
-                                val message = when {
-                                    errorMessage.contains("核心未运行") -> "请先建立连接后再测速。"
-                                    errorMessage.contains("可测速的分组") -> "当前配置没有可测速的分组，请先更新订阅。"
-                                    errorMessage.contains("outbound is not a group") ->
-                                        "当前节点不在可测速分组中，请在“自动测速”分组内重试。"
-                                    else -> errorMessage
-                                }
-                                showMessage("测速失败", message, MessageTone.Error)
+                                showMessage("Test Failed", errorMessage, MessageTone.Error)
                             }
                         }
-                    })
+                    }
+                )
             }
         }
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun MainPreview() {
-    SingboxwindowsTheme {
-        MainScreen(
-            state = VpnState.IDLE,
-            coreStatus = null,
-            coreVersion = "1.0.0",
-            subscriptions = SubscriptionState.empty(),
-            nameInput = "",
-            urlInput = "",
-            updatingId = null,
-            groups = emptyList(),
-            dialogMessage = null,
-            onDismissDialog = {},
-            onShowMessage = {},
-            onConnect = {},
-            onDisconnect = {},
-            onNameChange = {},
-            onUrlChange = {},
-            onAddSubscription = {},
-            onEditSubscription = { _, _, _ -> },
-            onSelectSubscription = {},
-            onRemoveSubscription = {},
-            onUpdateSubscription = {},
-            onSelectNode = { _, _ -> },
-            onTestNode = {})
-    }
-}
+
 
 private fun openNotificationSettings(context: android.content.Context) {
     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
