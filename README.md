@@ -5,6 +5,9 @@
   <img src="https://img.shields.io/badge/Kotlin-blue.svg" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack%20Compose-purple.svg" alt="Jetpack Compose">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  <a href="https://github.com/xinggaoya/sing-box-windows-android/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xinggaoya/sing-box-windows-android/release.yml?branch=master" alt="Build Status">
+  </a>
 </div>
 
 **Language / 语言**: [English](README.md) | [中文](README.zh-CN.md)
@@ -12,7 +15,7 @@
 ---
 
 <div align="center">
-  <img src="https://github.com/xinggaoya/sing-box-windows-android/assets/" alt="App Screenshot" width="300">
+  <img src="./docs/image.png" alt="App Screenshot" width="300">
 </div>
 
 ## 🎯 Introduction
@@ -34,16 +37,16 @@ Sing Box Windows Android is a modern Android VPN client application based on the
 
 ### Latest Version
 
-- [📥 v1.0.0 Stable Release](https://github.com/xinggaoya/sing-box-windows-android/releases/tag/v1.0.0)
+- [📥 v1.1.0 Stable Release](https://github.com/xinggaoya/sing-box-windows-android/releases/tag/v1.1.0)
 
 ### Architecture Selection
 
 Choose the appropriate APK based on your device architecture:
 
-| Architecture | Filename | Compatible Devices | Recommendation |
-|--------------|----------|-------------------|----------------|
-| arm64-v8a | `app-arm64-v8a-release.apk` | 64-bit ARM devices (most modern devices) | ⭐⭐⭐ |
-| armeabi-v7a | `app-armeabi-v7a-release.apk` | 32-bit ARM devices (older devices) | ⭐⭐ |
+| Architecture | Filename                      | Compatible Devices                       | Recommendation |
+| ------------ | ----------------------------- | ---------------------------------------- | -------------- |
+| arm64-v8a    | `app-arm64-v8a-release.apk`   | 64-bit ARM devices (most modern devices) | ⭐⭐⭐         |
+| armeabi-v7a  | `app-armeabi-v7a-release.apk` | 32-bit ARM devices (older devices)       | ⭐⭐           |
 
 ### System Requirements
 
@@ -53,10 +56,10 @@ Choose the appropriate APK based on your device architecture:
 
 ## 🚀 Quick Start
 
-1. **Download**: Get the appropriate APK from the Releases page
+1. **Download**: Get the appropriate APK from the [Releases](https://github.com/xinggaoya/sing-box-windows-android/releases) page
 2. **Install**: Install the APK file on your Android device
 3. **Grant Permissions**: Allow VPN and notification permissions
-4. **Add Subscription**: Enter your subscription link or configure manually
+4. **Add Subscription**: Enter your subscription link or import local node list
 5. **Connect**: Select a node and connect to the VPN
 
 ## 📖 User Guide
@@ -67,6 +70,13 @@ Choose the appropriate APK based on your device architecture:
 2. Enter subscription name and URL
 3. Click "Add" and wait for synchronization to complete
 4. Select the subscription to enable
+
+### Import Local Nodes
+
+You can also import local node lists:
+1. Tap "Import Local" in subscription management
+2. Select or paste node list content
+3. Save to use locally managed nodes
 
 ### Node Management
 
@@ -82,22 +92,22 @@ Choose the appropriate APK based on your device architecture:
 
 ## 🛠️ Technical Specifications
 
-| Item | Specification |
-|------|---------------|
-| **Language** | Kotlin |
-| **UI Framework** | Jetpack Compose + Material 3 |
-| **Core Library** | libbox (sing-box) |
-| **Min SDK** | API 29 (Android 10) |
-| **Target SDK** | API 36 (Android 15) |
-| **Build Tool** | Gradle with Kotlin DSL |
-| **Supported Protocols** | VLESS, Shadowsocks, etc. |
+| Item                    | Specification                |
+| ----------------------- | ---------------------------- |
+| **Language**            | Kotlin                       |
+| **UI Framework**        | Jetpack Compose + Material 3 |
+| **Core Library**        | libbox (sing-box)            |
+| **Min SDK**             | API 29 (Android 10)          |
+| **Target SDK**          | API 36 (Android 15)          |
+| **Build Tool**          | Gradle with Kotlin DSL       |
+| **Supported Protocols** | VLESS, Shadowsocks, etc.     |
 
 ## 🔧 Development & Build
 
 ### Requirements
 
 - Android Studio Hedgehog or higher
-- JDK 11 or higher
+- JDK 17 or higher
 - Android SDK (API 29+)
 
 ### Build Steps
@@ -105,7 +115,7 @@ Choose the appropriate APK based on your device architecture:
 ```bash
 # Clone repository
 git clone https://github.com/xinggaoya/sing-box-windows-android.git
-cd sing-box-windows-android
+cd singboxwindows
 
 # Build Debug version
 ./gradlew assembleDebug
@@ -124,13 +134,23 @@ app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
 │   │   ├── config/          # Configuration management
-│   │   ├── core/            # Core functionality
-│   │   ├── ui/              # User interface
+│   │   ├── core/            # Core functionality (Clash API, status, diagnostics)
+│   │   ├── ui/              # User interface (screens, components, theme)
 │   │   └── vpn/             # VPN service
 │   ├── res/                 # Resource files
-│   └── libs/                # Local dependencies
+│   └── libs/                # Local dependencies (libbox.aar)
 └── build.gradle             # Module build configuration
 ```
+
+### Architecture Overview
+
+The app follows **Singleton Store + Compose Reactive UI** pattern:
+
+- **Store Pattern**: Global state management using singleton objects with `mutableStateOf`
+- **Repository Pattern**: Configuration and subscription data persistence
+- **Manager Pattern**: Core functionality coordination (OutboundGroupManager, CoreStatusManager)
+
+For detailed architecture documentation, see [CLAUDE.md](CLAUDE.md).
 
 ## 🤝 Contributing
 
@@ -152,7 +172,15 @@ Contributions are welcome! Please follow these steps:
 
 ## 📝 Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for detailed version update records.
+See [CHANGELOG.md](docs/CHANGELOG.md) for detailed version update records.
+
+### Recent Highlights
+
+**v1.1.0** (2025-12-23)
+- Clash API deep integration for real-time traffic statistics
+- Local node import support
+- Redesigned navigation with bottom bar
+- Enhanced settings with auto-save
 
 ## 🐛 Issue Reporting
 

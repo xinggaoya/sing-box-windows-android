@@ -5,6 +5,9 @@
   <img src="https://img.shields.io/badge/Kotlin-blue.svg" alt="Kotlin">
   <img src="https://img.shields.io/badge/Jetpack%20Compose-purple.svg" alt="Jetpack Compose">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  <a href="https://github.com/xinggaoya/sing-box-windows-android/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xinggaoya/sing-box-windows-android/release.yml?branch=master" alt="Build Status">
+  </a>
 </div>
 
 **Language / 语言**: [中文](README.zh-CN.md) | [English](README.md)
@@ -12,7 +15,7 @@
 ---
 
 <div align="center">
-  <img src="https://github.com/xinggaoya/sing-box-windows-android/assets/" alt="App Screenshot" width="300">
+  <img src="./docs/image.png" alt="App Screenshot" width="300">
 </div>
 
 ## 🎯 简介
@@ -34,16 +37,16 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 
 ### 最新版本
 
-- [📥 v1.0.0 正式版](https://github.com/xinggaoya/sing-box-windows-android/releases/tag/v1.0.0)
+- [📥 v1.1.0 正式版](https://github.com/xinggaoya/sing-box-windows-android/releases/tag/v1.1.0)
 
 ### 架构选择
 
 根据您的设备架构选择合适的 APK：
 
-| 架构 | 文件名 | 适用设备 | 推荐度 |
-|------|--------|----------|--------|
-| arm64-v8a | `app-arm64-v8a-release.apk` | 64位ARM设备（大部分现代设备） | ⭐⭐⭐ |
-| armeabi-v7a | `app-armeabi-v7a-release.apk` | 32位ARM设备（较老设备） | ⭐⭐ |
+| 架构        | 文件名                        | 适用设备                         | 推荐度 |
+| ----------- | ----------------------------- | -------------------------------- | ------ |
+| arm64-v8a   | `app-arm64-v8a-release.apk`   | 64 位 ARM 设备（大部分现代设备） | ⭐⭐⭐ |
+| armeabi-v7a | `app-armeabi-v7a-release.apk` | 32 位 ARM 设备（较老设备）       | ⭐⭐   |
 
 ### 系统要求
 
@@ -53,10 +56,10 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 
 ## 🚀 快速开始
 
-1. **下载应用**：从 Releases 页面下载对应架构的 APK
+1. **下载应用**：从 [Releases](https://github.com/xinggaoya/sing-box-windows-android/releases) 页面下载对应架构的 APK
 2. **安装应用**：在 Android 设备上安装 APK 文件
 3. **授予权限**：允许 VPN 权限和通知权限
-4. **添加订阅**：输入您的订阅链接或手动配置
+4. **添加订阅**：输入您的订阅链接或导入本地节点列表
 5. **连接使用**：选择节点并连接 VPN
 
 ## 📖 使用指南
@@ -67,6 +70,13 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 2. 输入订阅名称和链接地址
 3. 点击"添加"并等待同步完成
 4. 选择启用的订阅
+
+### 导入本地节点
+
+您也可以导入本地节点列表：
+1. 在订阅管理中点击"导入本地"
+2. 选择或粘贴节点列表内容
+3. 保存即可使用本地管理的节点
 
 ### 节点管理
 
@@ -82,22 +92,22 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 
 ## 🛠️ 技术规格
 
-| 项目 | 规格 |
-|------|------|
-| **开发语言** | Kotlin |
-| **UI 框架** | Jetpack Compose + Material 3 |
-| **核心库** | libbox (sing-box) |
-| **最低 SDK** | API 29 (Android 10) |
-| **目标 SDK** | API 36 (Android 15) |
-| **构建工具** | Gradle with Kotlin DSL |
-| **支持协议** | VLESS, Shadowsocks 等 |
+| 项目         | 规格                         |
+| ------------ | ---------------------------- |
+| **开发语言** | Kotlin                       |
+| **UI 框架**  | Jetpack Compose + Material 3 |
+| **核心库**   | libbox (sing-box)            |
+| **最低 SDK** | API 29 (Android 10)          |
+| **目标 SDK** | API 36 (Android 15)          |
+| **构建工具** | Gradle with Kotlin DSL       |
+| **支持协议** | VLESS, Shadowsocks 等        |
 
 ## 🔧 开发构建
 
 ### 环境要求
 
 - Android Studio Hedgehog 或更高版本
-- JDK 11 或更高版本
+- JDK 17 或更高版本
 - Android SDK (API 29+)
 
 ### 构建步骤
@@ -105,7 +115,7 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 ```bash
 # 克隆仓库
 git clone https://github.com/xinggaoya/sing-box-windows-android.git
-cd sing-box-windows-android
+cd singboxwindows
 
 # 构建 Debug 版本
 ./gradlew assembleDebug
@@ -124,13 +134,23 @@ app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
 │   │   ├── config/          # 配置管理
-│   │   ├── core/            # 核心功能
-│   │   ├── ui/              # 用户界面
+│   │   ├── core/            # 核心功能 (Clash API, 状态, 诊断)
+│   │   ├── ui/              # 用户界面 (屏幕, 组件, 主题)
 │   │   └── vpn/             # VPN 服务
 │   ├── res/                 # 资源文件
-│   └── libs/                # 本地依赖库
+│   └── libs/                # 本地依赖库 (libbox.aar)
 └── build.gradle             # 模块构建配置
 ```
+
+### 架构概览
+
+应用采用 **单例 Store + Compose 响应式 UI** 模式：
+
+- **Store 模式**：使用单例对象 + `mutableStateOf` 进行全局状态管理
+- **Repository 模式**：配置和订阅数据持久化
+- **Manager 模式**：核心功能协调 (OutboundGroupManager, CoreStatusManager)
+
+详细架构文档请参阅 [CLAUDE.md](CLAUDE.md)。
 
 ## 🤝 贡献指南
 
@@ -152,7 +172,15 @@ app/
 
 ## 📝 更新日志
 
-查看 [CHANGELOG.md](CHANGELOG.md) 了解详细的版本更新记录。
+查看 [CHANGELOG.md](docs/CHANGELOG.md) 了解详细的版本更新记录。
+
+### 最近更新
+
+**v1.1.0** (2025-12-23)
+- Clash API 深度集成，实时流量统计
+- 支持导入本地节点列表
+- 重构导航架构，底部导航栏设计
+- 增强设置功能，配置自动保存
 
 ## 🐛 问题反馈
 
