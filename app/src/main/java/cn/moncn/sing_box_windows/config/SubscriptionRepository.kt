@@ -70,32 +70,13 @@ object SubscriptionRepository {
         if (!file.exists()) {
             return SubscriptionState.empty()
         }
-        return runCatching {
-            val root = JSONObject(file.readText())
-            val selectedId = root.optString("selectedId").takeIf { it.isNotBlank() }
-            val itemsJson = root.optJSONArray("items") ?: JSONArray()
-            val items = mutableListOf<SubscriptionItem>()
-            for (index in 0 until itemsJson.length()) {
-                val obj = itemsJson.optJSONObject(index) ?: continue
-                val isLocal = obj.optBoolean("isLocal", false)
-                val url = obj.optString("url").ifBlank { if (isLocal) LOCAL_URL else "" }
-                items.add(
-                    SubscriptionItem(
-                        id = obj.optString("id"),
-                        name = obj.optString("name"),
-                        url = url,
-                        lastUpdatedAt = obj.optLong("lastUpdatedAt").takeIf { it > 0 },
-                        lastError = obj.optString("lastError").takeIf { it.isNotBlank() },
-                        isLocal = isLocal,
-                        content = obj.optString("content").takeIf { it.isNotBlank() }
-                    )
-                )
-            }
-            val validSelected = selectedId?.takeIf { id -> items.any { it.id == id } }
-            SubscriptionState(items, validSelected)
-        }.getOrElse {
-            SubscriptionState.empty()
+        val parsed = runCatching { parseState(file.readText()) }.getOrNull()
+            ?: return SubscriptionState.empty()
+        if (parsed.shouldSave) {
+            // 兼容旧格式或缺失字段时，回写规范化结果以避免再次丢失显示。
+            runCatching { save(context, parsed.state) }
         }
+        return parsed.state
     }
 
     fun add(context: Context, name: String, url: String): SubscriptionAddResult {
@@ -326,6 +307,60 @@ object SubscriptionRepository {
         }
         root.put("items", items)
         file.writeText(root.toString(2))
+    }
+
+    private data class ParsedSubscriptionState(
+        val state: SubscriptionState,
+        val shouldSave: Boolean
+    )
+
+    private data class ParsedItems(
+        val items: List<SubscriptionItem>,
+        val changed: Boolean
+    )
+
+    private fun parseState(raw: String): ParsedSubscriptionState? {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) {
+            return null
+        }
+        return if (trimmed.startsWith("[")) {
+            val items = parseItems(JSONArray(trimmed))
+            ParsedSubscriptionState(SubscriptionState(items.items, null), true)
+        } else {
+            val root = JSONObject(trimmed)
+            val selectedId = root.optString("selectedId").takeIf { it.isNotBlank() }
+            val items = parseItems(root.optJSONArray("items") ?: JSONArray())
+            val validSelected = selectedId?.takeIf { id -> items.items.any { it.id == id } }
+            val shouldSave = items.changed || validSelected != selectedId
+            ParsedSubscriptionState(SubscriptionState(items.items, validSelected), shouldSave)
+        }
+    }
+
+    private fun parseItems(itemsJson: JSONArray): ParsedItems {
+        var changed = false
+        val items = mutableListOf<SubscriptionItem>()
+        for (index in 0 until itemsJson.length()) {
+            val obj = itemsJson.optJSONObject(index) ?: continue
+            val isLocal = obj.optBoolean("isLocal", false)
+            val url = obj.optString("url").ifBlank { if (isLocal) LOCAL_URL else "" }
+            val id = obj.optString("id").ifBlank {
+                changed = true
+                UUID.randomUUID().toString()
+            }
+            items.add(
+                SubscriptionItem(
+                    id = id,
+                    name = obj.optString("name"),
+                    url = url,
+                    lastUpdatedAt = obj.optLong("lastUpdatedAt").takeIf { it > 0 },
+                    lastError = obj.optString("lastError").takeIf { it.isNotBlank() },
+                    isLocal = isLocal,
+                    content = obj.optString("content").takeIf { it.isNotBlank() }
+                )
+            )
+        }
+        return ParsedItems(items, changed)
     }
 
     private fun saveConfigWithSettings(context: Context, json: String) {

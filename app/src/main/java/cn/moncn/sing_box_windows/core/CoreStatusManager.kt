@@ -2,68 +2,143 @@ package cn.moncn.sing_box_windows.core
 
 import android.os.Handler
 import android.os.Looper
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.CommandClientHandler
-import io.nekohasekai.libbox.CommandClientOptions
-import io.nekohasekai.libbox.Connections
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.OutboundGroupIterator
-import io.nekohasekai.libbox.StatusMessage
-import io.nekohasekai.libbox.StringIterator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
+/**
+ * 核心状态管理器 - 使用 WebSocket 获取实时流量，HTTP API 获取其他数据
+ */
 object CoreStatusManager {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var client: CommandClient? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
 
-    private val handler = object : CommandClientHandler {
-        override fun connected() = Unit
+    // 累计流量统计
+    private var totalUplinkBytes = 0L
+    private var totalDownlinkBytes = 0L
+    private var lastUpdateTime = 0L
 
-        override fun disconnected(message: String) {
-            mainHandler.post { CoreStatusStore.reset() }
-        }
-
-        override fun clearLogs() = Unit
-
-        override fun writeLogs(messageList: StringIterator) = Unit
-
-        override fun writeStatus(message: StatusMessage) {
-            val snapshot = CoreStatus(
-                memoryBytes = message.memory,
-                goroutines = message.goroutines,
-                connectionsIn = message.connectionsIn,
-                connectionsOut = message.connectionsOut,
-                trafficAvailable = message.trafficAvailable,
-                uplinkBytes = message.uplink,
-                downlinkBytes = message.downlink,
-                uplinkTotalBytes = message.uplinkTotal,
-                downlinkTotalBytes = message.downlinkTotal,
-                updatedAt = System.currentTimeMillis()
-            )
-            mainHandler.post { CoreStatusStore.update(snapshot) }
-        }
-
-        override fun writeConnections(message: Connections) = Unit
-
-        override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
-
-        override fun updateClashMode(newMode: String) = Unit
-
-        override fun writeGroups(message: OutboundGroupIterator) = Unit
-    }
+    // 缓存的静态数据（不需要频繁更新）
+    private var cachedMode: String? = null
+    private var cachedRulesCount: Int? = null
+    private var lastStaticDataFetchTime = 0L
+    private const val STATIC_DATA_FETCH_INTERVAL = 5000L // 静态数据每5秒更新一次
 
     fun start() {
-        if (client != null) return
-        val options = CommandClientOptions().apply {
-            command = Libbox.CommandStatus
-            statusInterval = 1000
+        if (job != null) return
+        job = scope.launch {
+            while (isActive) {
+                if (!ClashApiClient.isConfigured()) {
+                    ClashApiStreamManager.stop()
+                    mainHandler.post { CoreStatusStore.reset() }
+                    // 重置所有缓存
+                    resetStats()
+                    delay(1000)
+                    continue
+                }
+                ClashApiStreamManager.start()
+                val snapshot = fetchStatus()
+                if (snapshot != null) {
+                    mainHandler.post { CoreStatusStore.update(snapshot) }
+                }
+                delay(1000)
+            }
         }
-        client = Libbox.newCommandClient(handler, options)
-        runCatching { client?.connect() }
     }
 
     fun stop() {
-        runCatching { client?.disconnect() }
-        client = null
+        job?.cancel()
+        job = null
+        ClashApiStreamManager.stop()
         mainHandler.post { CoreStatusStore.reset() }
+    }
+
+    private fun resetStats() {
+        totalUplinkBytes = 0L
+        totalDownlinkBytes = 0L
+        lastUpdateTime = 0L
+        cachedMode = null
+        cachedRulesCount = null
+        lastStaticDataFetchTime = 0L
+    }
+
+    private suspend fun fetchStatus(): CoreStatus? = withContext(Dispatchers.IO) {
+        val trafficSnapshot = ClashApiStreamManager.getTrafficSnapshot()
+        val memorySnapshot = ClashApiStreamManager.getMemorySnapshot()
+
+        // 只要有 WebSocket 数据就返回状态
+        if (trafficSnapshot == null && memorySnapshot == null) {
+            return@withContext null
+        }
+
+        val now = System.currentTimeMillis()
+        val memoryBytes = memorySnapshot?.memoryBytes ?: 0L
+        val uplinkSpeed = trafficSnapshot?.uplinkBytes ?: 0L
+        val downlinkSpeed = trafficSnapshot?.downlinkBytes ?: 0L
+
+        // 累计流量计算
+        if (lastUpdateTime > 0 && trafficSnapshot != null) {
+            val deltaTime = (now - lastUpdateTime) / 1000.0
+            if (deltaTime > 0) {
+                val uplinkDelta = (uplinkSpeed * deltaTime).toLong()
+                val downlinkDelta = (downlinkSpeed * deltaTime).toLong()
+                totalUplinkBytes += uplinkDelta
+                totalDownlinkBytes += downlinkDelta
+            }
+        }
+        lastUpdateTime = now
+
+        // 获取连接数
+        var connectionsCount = 0
+        runCatching {
+            val connResult = ClashApiClient.getJsonValue("/connections")
+            if (connResult is JSONArray) {
+                connectionsCount = connResult.length()
+            } else if (connResult is JSONObject) {
+                val list = connResult.optJSONArray("connections")
+                connectionsCount = list?.length() ?: 0
+            }
+        }.getOrNull()
+
+        // 获取静态数据（模式、规则数）- 降低频率
+        if (now - lastStaticDataFetchTime > STATIC_DATA_FETCH_INTERVAL) {
+            lastStaticDataFetchTime = now
+            runCatching {
+                val configs = ClashApiClient.getJsonObject("/configs")
+                cachedMode = configs?.optString("mode")
+            }.getOrNull()
+
+            runCatching {
+                val rules = ClashApiClient.getJsonValue("/rules")
+                cachedRulesCount = when (rules) {
+                    is JSONArray -> rules.length()
+                    is JSONObject -> rules.optJSONArray("rules")?.length()
+                    else -> null
+                }
+            }.getOrNull()
+        }
+
+        CoreStatus(
+            memoryBytes = memoryBytes,
+            goroutines = 0,
+            connectionsIn = connectionsCount,
+            connectionsOut = 0,
+            trafficAvailable = trafficSnapshot != null,
+            uplinkBytes = uplinkSpeed,
+            downlinkBytes = downlinkSpeed,
+            uplinkTotalBytes = totalUplinkBytes,
+            downlinkTotalBytes = totalDownlinkBytes,
+            mode = cachedMode,
+            rulesCount = cachedRulesCount,
+            updatedAt = now
+        )
     }
 }

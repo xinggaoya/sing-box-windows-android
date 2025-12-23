@@ -18,8 +18,13 @@ import android.net.wifi.WifiManager
 import androidx.core.app.NotificationCompat
 import cn.moncn.sing_box_windows.MainActivity
 import cn.moncn.sing_box_windows.R
+import cn.moncn.sing_box_windows.config.ConfigSettingsApplier
 import cn.moncn.sing_box_windows.config.ConfigRepository
+import cn.moncn.sing_box_windows.config.AppSettingsDefaults
+import cn.moncn.sing_box_windows.config.ClashApiDefaults
+import cn.moncn.sing_box_windows.config.SettingsRepository
 import cn.moncn.sing_box_windows.core.CoreStartResult
+import cn.moncn.sing_box_windows.core.ClashApiClient
 import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.SingBoxEngine
 import io.nekohasekai.libbox.Notification as LibboxNotification
@@ -85,8 +90,19 @@ class AppVpnService : android.net.VpnService() {
         // 首次启动可能伴随规则下载，放到后台避免阻塞 UI。
         serviceScope.launch {
             val result = runCatching {
-                val configJson = ConfigRepository.loadOrCreateConfig(this@AppVpnService)
-                SingBoxEngine.start(configJson, platform)
+                val rawConfig = ConfigRepository.loadOrCreateConfig(this@AppVpnService)
+                val settings = SettingsRepository.load(this@AppVpnService)
+                if (settings.clashApiEnabled) {
+                    val address = settings.clashApiAddress.trim().ifBlank {
+                        AppSettingsDefaults.CLASH_API_ADDRESS
+                    }
+                    ClashApiClient.configure(address, ClashApiDefaults.SECRET)
+                } else {
+                    ClashApiClient.reset()
+                }
+                val appliedConfig = ConfigSettingsApplier.applySettings(rawConfig, settings)
+                ConfigRepository.saveConfig(this@AppVpnService, appliedConfig)
+                SingBoxEngine.start(appliedConfig, platform)
             }.getOrElse { error ->
                 CoreStartResult(
                     ok = false,

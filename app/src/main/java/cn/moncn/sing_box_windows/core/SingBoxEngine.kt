@@ -16,8 +16,10 @@ object SingBoxEngine {
             val instance = Libbox.newService(configJson, platform)
             instance.start()
             CommandServerHolder.start(instance)
+            ClashApiClient.configureFromConfig(configJson)
             CoreStatusManager.start()
             OutboundGroupManager.start()
+            CoreInfoManager.start()
             service = instance
             LibboxServiceHolder.service = instance
             started = true
@@ -33,6 +35,7 @@ object SingBoxEngine {
         }
         OutboundGroupManager.stop()
         CoreStatusManager.stop()
+        CoreInfoManager.stop()
         CommandServerHolder.stop()
         try {
             service?.close()
@@ -41,6 +44,7 @@ object SingBoxEngine {
         }
         LibboxServiceHolder.service = null
         service = null
+        ClashApiClient.reset()
         started = false
     }
 

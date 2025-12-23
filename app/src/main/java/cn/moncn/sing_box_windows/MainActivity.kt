@@ -31,9 +31,18 @@ import androidx.compose.material3.TextButton
 import cn.moncn.sing_box_windows.config.SubscriptionRepository
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.config.SubscriptionUpdateResult
+import cn.moncn.sing_box_windows.config.AppSettings
+import cn.moncn.sing_box_windows.config.AppSettingsDefaults
+import cn.moncn.sing_box_windows.config.ClashApiDefaults
+import cn.moncn.sing_box_windows.config.SettingsRepository
+import cn.moncn.sing_box_windows.core.CoreInfoStore
 import cn.moncn.sing_box_windows.core.CoreStatusStore
+import cn.moncn.sing_box_windows.core.ClashApiClient
+import cn.moncn.sing_box_windows.core.CoreInfoManager
+import cn.moncn.sing_box_windows.core.CoreStatusManager
 import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.OutboundGroupManager
+import cn.moncn.sing_box_windows.core.ClashModeManager
 import cn.moncn.sing_box_windows.ui.MessageDialogState
 import cn.moncn.sing_box_windows.ui.MessageTone
 import cn.moncn.sing_box_windows.ui.AppNavigation
@@ -41,7 +50,6 @@ import cn.moncn.sing_box_windows.ui.theme.SingboxwindowsTheme
 import cn.moncn.sing_box_windows.vpn.VpnController
 import cn.moncn.sing_box_windows.vpn.VpnState
 import cn.moncn.sing_box_windows.vpn.VpnStateStore
-import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,9 +67,9 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 val groups = OutboundGroupManager.groups
                 val coreStatus = CoreStatusStore.status
-                val coreVersion = remember {
-                    runCatching { Libbox.version() }.getOrNull()
-                }
+                val coreVersion = CoreInfoStore.version
+                val currentMode = ClashModeManager.currentMode
+                val isModeSupported = ClashModeManager.isModeSupported
                 var subscriptions by remember { mutableStateOf(SubscriptionState.empty()) }
                 var nameInput by remember { mutableStateOf("") }
                 var urlInput by remember { mutableStateOf("") }
@@ -69,10 +77,37 @@ class MainActivity : ComponentActivity() {
                 var dialogMessage by remember { mutableStateOf<MessageDialogState?>(null) }
                 var lastVpnError by remember { mutableStateOf<String?>(null) }
                 var pendingConnect by remember { mutableStateOf(false) }
+                var appSettings by remember { mutableStateOf<AppSettings?>(null) }
 
                 LaunchedEffect(Unit) {
                     subscriptions = withContext(Dispatchers.IO) {
                         SubscriptionRepository.load(context)
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    appSettings = withContext(Dispatchers.IO) {
+                        SettingsRepository.load(context)
+                    }
+                }
+
+                LaunchedEffect(state, appSettings) {
+                    val settings = appSettings ?: return@LaunchedEffect
+                    if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
+                        if (settings.clashApiEnabled) {
+                            val address = settings.clashApiAddress.trim().ifBlank {
+                                AppSettingsDefaults.CLASH_API_ADDRESS
+                            }
+                            ClashApiClient.configure(address, ClashApiDefaults.SECRET)
+                        } else {
+                            ClashApiClient.reset()
+                        }
+                        CoreStatusManager.start()
+                        OutboundGroupManager.start()
+                        ClashModeManager.start()
+                        CoreInfoManager.start()
+                    } else {
+                        ClashApiClient.reset()
                     }
                 }
 
@@ -182,11 +217,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                AppNavigation(
-                    state = state,
-                    coreStatus = coreStatus,
-                    coreVersion = coreVersion,
-                    subscriptions = subscriptions,
+                    AppNavigation(
+                        state = state,
+                        coreStatus = coreStatus,
+                        coreVersion = coreVersion,
+                        currentMode = currentMode,
+                        isModeSupported = isModeSupported,
+                        subscriptions = subscriptions,
                     nameInput = nameInput,
                     urlInput = urlInput,
                     updatingId = updatingId,
@@ -225,6 +262,18 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onDisconnect = { VpnController.stop(context) },
+                    onSwitchMode = { mode ->
+                        scope.launch {
+                            val result = ClashModeManager.switchMode(mode)
+                            result.onFailure {
+                                showMessage(
+                                    title = "切换失败",
+                                    message = it.message ?: "未知错误",
+                                    tone = MessageTone.Error
+                                )
+                            }
+                        }
+                    },
                     onAddSubscription = { name, url ->
                         scope.launch {
                             val addResult = withContext(Dispatchers.IO) {

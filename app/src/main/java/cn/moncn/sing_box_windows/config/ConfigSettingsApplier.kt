@@ -80,6 +80,7 @@ object ConfigSettingsApplier {
                 clashApi.put("default_mode", "rule")
             }
             clashApi.put("external_controller", settings.clashApiAddress)
+            clashApi.put("secret", ClashApiDefaults.SECRET)
         } else {
             experimental.remove("clash_api")
         }

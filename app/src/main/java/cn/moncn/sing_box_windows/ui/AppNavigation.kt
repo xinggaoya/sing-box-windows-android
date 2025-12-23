@@ -26,6 +26,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import cn.moncn.sing_box_windows.core.CoreStatus
 import cn.moncn.sing_box_windows.core.OutboundGroupModel
+import cn.moncn.sing_box_windows.core.ClashModeManager
 import cn.moncn.sing_box_windows.config.SubscriptionState
 import cn.moncn.sing_box_windows.vpn.VpnState
 import cn.moncn.sing_box_windows.ui.screens.HomeScreen
@@ -48,14 +49,17 @@ fun AppNavigation(
     state: VpnState,
     coreStatus: CoreStatus?,
     coreVersion: String?,
+    currentMode: ClashModeManager.ClashMode?,
+    isModeSupported: Boolean,
     subscriptions: SubscriptionState,
-    nameInput: String, // Kept for state continuity if needed, or refs
+    nameInput: String,
     urlInput: String,
     updatingId: String?,
     groups: List<OutboundGroupModel>,
     // Actions
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onSwitchMode: (ClashModeManager.ClashMode) -> Unit,
     onAddSubscription: (String, String) -> Unit,
     onImportNodes: (String, String) -> Unit,
     onEditSubscription: (String, String, String) -> Unit,
@@ -145,8 +149,12 @@ fun AppNavigation(
                         actionText = actionText,
                         coreStatus = coreStatus,
                         coreVersion = coreVersion,
+                        groups = groups,
+                        currentMode = currentMode,
+                        isModeSupported = isModeSupported,
                         onConnect = onConnect,
-                        onDisconnect = onDisconnect
+                        onDisconnect = onDisconnect,
+                        onSwitchMode = onSwitchMode
                     )
                 }
                 composable(Screen.Subscriptions.route) {

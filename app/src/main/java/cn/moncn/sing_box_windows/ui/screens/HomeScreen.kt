@@ -2,6 +2,7 @@ package cn.moncn.sing_box_windows.ui.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import cn.moncn.sing_box_windows.core.ClashModeManager
 import cn.moncn.sing_box_windows.core.CoreStatus
+import cn.moncn.sing_box_windows.core.OutboundGroupModel
 import cn.moncn.sing_box_windows.ui.components.AppCard
 import cn.moncn.sing_box_windows.ui.components.AppSection
 import cn.moncn.sing_box_windows.ui.components.MetricTile
@@ -46,8 +49,12 @@ fun HomeScreen(
     actionText: String,
     coreStatus: CoreStatus?,
     coreVersion: String?,
+    groups: List<OutboundGroupModel>,
+    currentMode: ClashModeManager.ClashMode?,
+    isModeSupported: Boolean,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onSwitchMode: (ClashModeManager.ClashMode) -> Unit
 ) {
     val scrollState = rememberScrollState()
     val trafficAvailable = coreStatus?.trafficAvailable == true
@@ -56,6 +63,8 @@ fun HomeScreen(
         targetValue = if (state == VpnState.CONNECTED) 0.55f else 0.35f,
         label = "glowAlpha"
     )
+    val primaryGroup = findPrimaryGroup(groups)
+    val modeLabel = formatMode(currentMode?.displayName)
 
     Column(
         modifier = Modifier
@@ -119,6 +128,49 @@ fun HomeScreen(
                 MetricTile(
                     label = "总下载",
                     value = if (trafficAvailable) formatBytes(coreStatus?.downlinkTotalBytes ?: 0) else "---",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        AppSection(title = { Text("运行状态", style = MaterialTheme.typography.titleMedium) }) {
+            // 模式切换器（仅在 VPN 连接且支持模式切换时显示）
+            if (state == VpnState.CONNECTED && isModeSupported) {
+                ModeSwitcher(
+                    currentMode = currentMode,
+                    onModeSelected = onSwitchMode
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MetricTile(
+                    label = "运行模式",
+                    value = modeLabel,
+                    modifier = Modifier.weight(1f)
+                )
+                MetricTile(
+                    label = "当前出口",
+                    value = primaryGroup?.selected ?: "---",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MetricTile(
+                    label = "活跃连接",
+                    value = formatCount(coreStatus?.connectionsIn),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricTile(
+                    label = "规则数量",
+                    value = formatCount(coreStatus?.rulesCount),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -245,6 +297,60 @@ private fun ConnectionCard(
     }
 }
 
+@Composable
+private fun ModeSwitcher(
+    currentMode: ClashModeManager.ClashMode?,
+    onModeSelected: (ClashModeManager.ClashMode) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val modes = listOf(
+        ClashModeManager.ClashMode.Rule,
+        ClashModeManager.ClashMode.Global,
+        ClashModeManager.ClashMode.Direct
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "切换模式",
+            style = MaterialTheme.typography.labelMedium,
+            color = scheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            modes.forEach { mode ->
+                val isSelected = currentMode == mode
+                val bgColor = if (isSelected) {
+                    scheme.primaryContainer
+                } else {
+                    scheme.surfaceVariant
+                }
+                val textColor = if (isSelected) {
+                    scheme.onPrimaryContainer
+                } else {
+                    scheme.onSurfaceVariant
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(bgColor, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable { onModeSelected(mode) }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = mode.displayName,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = textColor
+                    )
+                }
+            }
+        }
+    }
+}
+
 fun formatSpeed(bytes: Long): String {
     if (bytes < 1024) return "$bytes B/s"
     if (bytes < 1024 * 1024) return String.format("%.1f KB/s", bytes / 1024f)
@@ -262,4 +368,20 @@ fun formatMemory(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
     if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024f)
     return String.format("%.1f MB", bytes / (1024f * 1024f))
+}
+
+private fun formatMode(mode: String?): String {
+    return mode ?: "---"
+}
+
+private fun formatCount(count: Int?): String {
+    return count?.let { it.coerceAtLeast(0).toString() } ?: "---"
+}
+
+private fun findPrimaryGroup(groups: List<OutboundGroupModel>): OutboundGroupModel? {
+    if (groups.isEmpty()) return null
+    val preferredTags = setOf("global", "proxy")
+    val preferred = groups.firstOrNull { preferredTags.contains(it.tag.lowercase()) }
+    if (preferred != null) return preferred
+    return groups.firstOrNull { it.selectable } ?: groups.first()
 }

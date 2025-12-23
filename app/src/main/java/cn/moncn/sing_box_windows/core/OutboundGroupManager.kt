@@ -2,17 +2,20 @@ package cn.moncn.sing_box_windows.core
 
 import android.os.Handler
 import android.os.Looper
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.CommandClientHandler
-import io.nekohasekai.libbox.CommandClientOptions
-import io.nekohasekai.libbox.Connections
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.OutboundGroupIterator
-import io.nekohasekai.libbox.StatusMessage
-import io.nekohasekai.libbox.StringIterator
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.time.Instant
 
 data class OutboundItemModel(
     val tag: String,
@@ -32,10 +35,10 @@ data class OutboundGroupModel(
 
 object OutboundGroupManager {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var client: CommandClient? = null
-    private var urlTestClient: CommandClient? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var refreshJob: Job? = null
     private var lastTestSnapshot: Map<String, TestSnapshot> = emptyMap()
-    private var testingTags by mutableStateOf<Map<String, TestingState>>(emptyMap())
+    private var testingTags: Map<String, TestingState> = emptyMap()
 
     var groups by mutableStateOf<List<OutboundGroupModel>>(emptyList())
         private set
@@ -50,152 +53,66 @@ object OutboundGroupManager {
         val startedAt: Long
     )
 
-    private val handler = object : CommandClientHandler {
-        override fun connected() = Unit
-
-        override fun disconnected(message: String) {
-            mainHandler.post { groups = emptyList() }
-        }
-
-        override fun clearLogs() = Unit
-
-        override fun writeLogs(messageList: StringIterator) = Unit
-
-        override fun writeStatus(message: StatusMessage) = Unit
-
-        override fun writeConnections(message: Connections) = Unit
-
-        override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
-
-        override fun updateClashMode(newMode: String) = Unit
-
-        override fun writeGroups(message: OutboundGroupIterator) {
-            val groupList = mutableListOf<OutboundGroupModel>()
-            while (message.hasNext()) {
-                val group = message.next()
-                val items = mutableListOf<OutboundItemModel>()
-                val itemIterator = group.items
-                while (itemIterator.hasNext()) {
-                    val item = itemIterator.next()
-                    val delay = if (item.urlTestDelay > 0) item.urlTestDelay else null
-                    val testTime = if (item.urlTestTime > 0) item.urlTestTime else null
-                    items.add(
-                        OutboundItemModel(
-                            tag = item.tag,
-                            type = item.type,
-                            delayMs = delay,
-                            lastTestAt = testTime
-                        )
-                    )
-                }
-                groupList.add(
-                    OutboundGroupModel(
-                        tag = group.tag,
-                        type = group.type,
-                        selectable = group.selectable,
-                        selected = group.selected,
-                        items = items
-                    )
-                )
-            }
-            val snapshot = buildTestSnapshot(groupList)
-            val updatedTesting = testingTags.filterNot { (tag, state) ->
-                val current = snapshot[tag]
-                current != null && current != state.baseline
-            }
-            val normalizedGroups = normalizeTestResults(groupList, snapshot)
-            val testingSet = updatedTesting.keys
-            val displayedGroups = normalizedGroups.map { group ->
-                val updatedItems = group.items.map { item ->
-                    item.copy(isTesting = testingSet.contains(item.tag))
-                }
-                group.copy(items = updatedItems)
-            }
-            mainHandler.post {
-                lastTestSnapshot = snapshot
-                testingTags = updatedTesting
-                groups = displayedGroups
-            }
-        }
-    }
-
     fun start() {
-        if (client != null) return
-        val options = CommandClientOptions().apply {
-            command = Libbox.CommandGroup
-            statusInterval = 3000
+        if (refreshJob != null) return
+        refreshJob = scope.launch {
+            while (isActive) {
+                if (!ClashApiClient.isConfigured()) {
+                    mainHandler.post { groups = emptyList() }
+                    delay(1000)
+                    continue
+                }
+                refreshGroups()
+                delay(3000)
+            }
         }
-        client = Libbox.newCommandClient(handler, options)
-        runCatching { client?.connect() }
-        ensureUrlTestClient()
     }
 
     fun stop() {
-        runCatching { client?.disconnect() }
-        client = null
-        runCatching { urlTestClient?.disconnect() }
-        urlTestClient = null
+        refreshJob?.cancel()
+        refreshJob = null
         mainHandler.post { groups = emptyList() }
     }
 
     fun select(groupTag: String, outboundTag: String) {
-        runCatching { client?.selectOutbound(groupTag, outboundTag) }
-        mainHandler.post {
-            groups = groups.map { group ->
-                if (group.tag == groupTag) {
-                    group.copy(selected = outboundTag)
-                } else {
-                    group
+        scope.launch {
+            runCatching {
+                val encodedGroup = encodePathSegment(groupTag)
+                val body = JSONObject().put("name", outboundTag)
+                ClashApiClient.putJson("/proxies/$encodedGroup", body)
+            }
+            runCatching { ClashApiClient.delete("/connections") }
+            mainHandler.post {
+                groups = groups.map { group ->
+                    if (group.tag == groupTag) {
+                        group.copy(selected = outboundTag)
+                    } else {
+                        group
+                    }
                 }
             }
         }
-        // 主动断开旧连接，让节点切换立即生效，避免需重启才能观察到变化。
-        runCatching { client?.closeConnections() }
     }
 
-    fun urlTest(outboundTag: String): Result<Unit> {
-        if (client == null) {
+    suspend fun urlTest(outboundTag: String): Result<Unit> {
+        if (!ClashApiClient.isConfigured()) {
             return Result.failure(IllegalStateException("核心未运行"))
         }
-        val group = findUrlTestGroup(outboundTag)
-            ?: return Result.failure(IllegalStateException("当前配置没有可测速的分组"))
-        ensureUrlTestClient()
+        val encodedProxy = encodePathSegment(outboundTag)
         val result = runCatching {
-            urlTestClient?.urlTest(group.tag) ?: error("测速通道不可用")
-        }.recoverCatching {
-            client?.urlTest(group.tag) ?: error("测速通道不可用")
-        }
-        if (result.isSuccess) {
-            markTesting(outboundTag)
+            ClashApiClient.getJsonObject(
+                "/proxies/$encodedProxy/delay",
+                mapOf("url" to TEST_URL, "timeout" to TEST_TIMEOUT_MS.toString())
+            )
+        }.map { response ->
+            val delay = readDelay(response)
+            if (delay != null) {
+                recordTestResult(outboundTag, delay)
+            } else {
+                markTesting(outboundTag)
+            }
         }
         return result
-    }
-
-    private fun ensureUrlTestClient() {
-        if (urlTestClient != null) return
-        val options = CommandClientOptions().apply {
-            command = Libbox.CommandURLTest
-            statusInterval = 1000
-        }
-        val emptyHandler = object : CommandClientHandler {
-            override fun connected() = Unit
-            override fun disconnected(message: String) = Unit
-            override fun clearLogs() = Unit
-            override fun writeLogs(messageList: StringIterator) = Unit
-            override fun writeStatus(message: StatusMessage) = Unit
-            override fun writeConnections(message: Connections) = Unit
-            override fun initializeClashMode(modeList: StringIterator, currentMode: String) = Unit
-            override fun updateClashMode(newMode: String) = Unit
-            override fun writeGroups(message: OutboundGroupIterator) = Unit
-        }
-        urlTestClient = Libbox.newCommandClient(emptyHandler, options)
-        runCatching { urlTestClient?.connect() }
-    }
-
-    private fun findUrlTestGroup(outboundTag: String): OutboundGroupModel? {
-        return groups.firstOrNull { group ->
-            group.type == "urltest" && group.items.any { it.tag == outboundTag }
-        } ?: groups.firstOrNull { it.type == "urltest" }
     }
 
     private fun buildTestSnapshot(
@@ -230,17 +147,19 @@ object OutboundGroupManager {
     }
 
     private fun markTesting(tag: String) {
-        val baseline = lastTestSnapshot[tag]
-        val startedAt = System.currentTimeMillis()
-        testingTags = testingTags + (tag to TestingState(baseline, startedAt))
-        refreshTestingState()
-        mainHandler.postDelayed({
-            val current = testingTags[tag] ?: return@postDelayed
-            if (current.startedAt == startedAt) {
-                testingTags = testingTags - tag
-                refreshTestingState()
-            }
-        }, 15_000)
+        mainHandler.post {
+            val baseline = lastTestSnapshot[tag]
+            val startedAt = System.currentTimeMillis()
+            testingTags = testingTags + (tag to TestingState(baseline, startedAt))
+            refreshTestingState()
+            mainHandler.postDelayed({
+                val current = testingTags[tag] ?: return@postDelayed
+                if (current.startedAt == startedAt) {
+                    testingTags = testingTags - tag
+                    refreshTestingState()
+                }
+            }, 15_000)
+        }
     }
 
     private fun refreshTestingState() {
@@ -254,4 +173,136 @@ object OutboundGroupManager {
             }
         }
     }
+
+    private suspend fun refreshGroups() {
+        val response = runCatching { ClashApiClient.getJsonObject("/proxies") }.getOrNull()
+            ?: return
+        val proxies = response.optJSONObject("proxies") ?: return
+        val detailMap = mutableMapOf<String, JSONObject>()
+        val keys = proxies.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            proxies.optJSONObject(key)?.let { detailMap[key] = it }
+        }
+        val groupList = mutableListOf<OutboundGroupModel>()
+        detailMap.forEach { (groupName, detail) ->
+            val all = detail.optJSONArray("all") ?: return@forEach
+            if (all.length() == 0) return@forEach
+            val selected = detail.optString("now", detail.optString("selected", ""))
+                .ifBlank { all.optString(0) }
+            val type = detail.optString("type", "unknown")
+            val normalizedType = normalizeType(type)
+            val selectable = isSelectableGroup(normalizedType)
+            val items = buildItems(all, detailMap)
+            groupList.add(
+                OutboundGroupModel(
+                    tag = groupName,
+                    type = normalizedType,
+                    selectable = selectable,
+                    selected = selected,
+                    items = items
+                )
+            )
+        }
+        val snapshot = buildTestSnapshot(groupList)
+        val updatedTesting = testingTags.filterNot { (tag, state) ->
+            val current = snapshot[tag]
+            current != null && current != state.baseline
+        }
+        val normalizedGroups = normalizeTestResults(groupList, snapshot)
+        val testingSet = updatedTesting.keys
+        val displayedGroups = normalizedGroups.map { group ->
+            val updatedItems = group.items.map { item ->
+                item.copy(isTesting = testingSet.contains(item.tag))
+            }
+            group.copy(items = updatedItems)
+        }
+        mainHandler.post {
+            lastTestSnapshot = snapshot
+            testingTags = updatedTesting
+            groups = displayedGroups
+        }
+    }
+
+    private fun buildItems(
+        items: JSONArray,
+        detailMap: Map<String, JSONObject>
+    ): List<OutboundItemModel> {
+        val result = mutableListOf<OutboundItemModel>()
+        for (index in 0 until items.length()) {
+            val tag = items.optString(index)
+            if (tag.isBlank()) continue
+            val detail = detailMap[tag]
+            val type = normalizeType(detail?.optString("type", "unknown") ?: "unknown")
+            val history = detail?.optJSONArray("history")
+            val snapshot = resolveHistory(history)
+            result.add(
+                OutboundItemModel(
+                    tag = tag,
+                    type = type,
+                    delayMs = snapshot?.delayMs,
+                    lastTestAt = snapshot?.lastTestAt
+                )
+            )
+        }
+        return result
+    }
+
+    private fun resolveHistory(history: JSONArray?): TestSnapshot? {
+        if (history == null || history.length() == 0) return null
+        val last = history.optJSONObject(history.length() - 1) ?: return null
+        val delay = readDelay(last)
+        val testTime = readHistoryTime(last)
+        return TestSnapshot(delay, testTime)
+    }
+
+    private fun isSelectableGroup(type: String): Boolean {
+        return type in setOf("selector", "urltest", "fallback", "loadbalance")
+    }
+
+    private fun normalizeType(value: String): String {
+        return value.trim().lowercase().replace("-", "").replace("_", "").replace(" ", "")
+    }
+
+    private fun readDelay(value: JSONObject): Int? {
+        val delay = value.optInt("delay", -1)
+        if (delay > 0) return delay
+        val latency = value.optInt("latency", -1)
+        return latency.takeIf { it > 0 }
+    }
+
+    private fun readHistoryTime(value: JSONObject): Long? {
+        val timeText = value.optString("time", "")
+        if (timeText.isNotBlank()) {
+            return runCatching { Instant.parse(timeText).toEpochMilli() }.getOrNull()
+        }
+        val numeric = value.optLong("time", 0L)
+        if (numeric <= 0L) return null
+        return if (numeric > 1_000_000_000_000L) numeric else numeric * 1000L
+    }
+
+    private fun recordTestResult(tag: String, delayMs: Int) {
+        val now = System.currentTimeMillis()
+        mainHandler.post {
+            lastTestSnapshot = lastTestSnapshot + (tag to TestSnapshot(delayMs, now))
+            testingTags = testingTags - tag
+            groups = groups.map { group ->
+                val updatedItems = group.items.map { item ->
+                    if (item.tag == tag) {
+                        item.copy(delayMs = delayMs, lastTestAt = now, isTesting = false)
+                    } else {
+                        item
+                    }
+                }
+                group.copy(items = updatedItems)
+            }
+        }
+    }
+
+    private fun encodePathSegment(value: String): String {
+        return URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    }
+
+    private const val TEST_URL = "http://www.gstatic.com/generate_204"
+    private const val TEST_TIMEOUT_MS = 5000
 }
