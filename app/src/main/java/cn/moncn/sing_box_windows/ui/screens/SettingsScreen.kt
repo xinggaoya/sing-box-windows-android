@@ -1,5 +1,7 @@
 package cn.moncn.sing_box_windows.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,11 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -28,7 +33,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import cn.moncn.sing_box_windows.config.AppSettings
@@ -37,26 +45,32 @@ import cn.moncn.sing_box_windows.config.ConfigRepository
 import cn.moncn.sing_box_windows.config.SettingsRepository
 import cn.moncn.sing_box_windows.ui.MessageDialogState
 import cn.moncn.sing_box_windows.ui.MessageTone
-import cn.moncn.sing_box_windows.ui.components.AppCard
-import cn.moncn.sing_box_windows.ui.components.AppSection
+import cn.moncn.sing_box_windows.ui.components.NeoCard
+import cn.moncn.sing_box_windows.ui.components.NeoDivider
+import cn.moncn.sing_box_windows.ui.components.PrimaryButton
+import cn.moncn.sing_box_windows.ui.components.Section
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * 现代化设置页面
+ * 全新设计的配置界面
+ */
 @Composable
 fun SettingsScreen(
     onShowMessage: (MessageDialogState) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 设置状态
     var currentSettings by remember { mutableStateOf(AppSettings()) }
     var logLevel by remember { mutableStateOf(AppSettingsDefaults.LOG_LEVEL) }
     var logTimestamp by remember { mutableStateOf(AppSettingsDefaults.LOG_TIMESTAMP) }
     var dnsStrategy by remember { mutableStateOf(AppSettingsDefaults.DNS_STRATEGY) }
     var dnsCacheEnabled by remember { mutableStateOf(AppSettingsDefaults.DNS_CACHE_ENABLED) }
-    var dnsIndependentCache by remember {
-        mutableStateOf(AppSettingsDefaults.DNS_INDEPENDENT_CACHE)
-    }
+    var dnsIndependentCache by remember { mutableStateOf(AppSettingsDefaults.DNS_INDEPENDENT_CACHE) }
     var tunMtuInput by remember { mutableStateOf(AppSettingsDefaults.TUN_MTU.toString()) }
     var tunAutoRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_AUTO_ROUTE) }
     var tunStrictRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_STRICT_ROUTE) }
@@ -68,6 +82,7 @@ fun SettingsScreen(
     var clashApiAddress by remember { mutableStateOf(AppSettingsDefaults.CLASH_API_ADDRESS) }
     var isSaving by remember { mutableStateOf(false) }
 
+    // 加载设置
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { SettingsRepository.load(context) }
         currentSettings = loaded
@@ -87,17 +102,14 @@ fun SettingsScreen(
         clashApiAddress = loaded.clashApiAddress
     }
 
+    // 保存设置
     fun saveSettings() {
         if (isSaving) return
-        val normalizedMtu = tunMtuInput.toIntOrNull()
-            ?.coerceIn(1280, 9000) ?: currentSettings.tunMtu
-        val normalizedMixedPort = mixedPortInput.toIntOrNull()
-            ?.coerceIn(1024, 65535) ?: currentSettings.mixedInboundPort
-        val normalizedSocksPort = socksPortInput.toIntOrNull()
-            ?.coerceIn(1024, 65535) ?: currentSettings.socksInboundPort
-        val normalizedClashApiAddress = clashApiAddress.trim().ifBlank {
-            currentSettings.clashApiAddress
-        }
+        val normalizedMtu = tunMtuInput.toIntOrNull()?.coerceIn(1280, 9000) ?: currentSettings.tunMtu
+        val normalizedMixedPort = mixedPortInput.toIntOrNull()?.coerceIn(1024, 65535) ?: currentSettings.mixedInboundPort
+        val normalizedSocksPort = socksPortInput.toIntOrNull()?.coerceIn(1024, 65535) ?: currentSettings.socksInboundPort
+        val normalizedClashApiAddress = clashApiAddress.trim().ifBlank { currentSettings.clashApiAddress }
+
         val newSettings = currentSettings.copy(
             logLevel = logLevel,
             logTimestamp = logTimestamp,
@@ -114,6 +126,7 @@ fun SettingsScreen(
             clashApiEnabled = clashApiEnabled,
             clashApiAddress = normalizedClashApiAddress
         )
+
         isSaving = true
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -136,38 +149,44 @@ fun SettingsScreen(
         }
     }
 
+    val scheme = MaterialTheme.colorScheme
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
+        // ==================== 页面标题 ====================
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = "设置",
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "调节内核行为与本地代理参数",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "配置 VPN 内核参数",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant
                 )
             }
         }
 
+        // ==================== 内核日志设置 ====================
         item {
-            AppSection(title = { Text("内核日志", style = MaterialTheme.typography.titleMedium) }) {
-                AppCard(modifier = Modifier.fillMaxWidth()) {
+            Section(title = { Text("内核日志", style = MaterialTheme.typography.titleMedium) }) {
+                NeoCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingDropdownRow(
                             title = "日志级别",
-                            description = "决定输出详细程度",
+                            description = "决定日志输出详细程度",
                             options = LOG_LEVELS,
                             labels = LOG_LEVEL_LABELS,
                             selected = logLevel,
                             onSelected = { logLevel = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "时间戳",
                             description = "记录日志时追加时间信息",
@@ -179,9 +198,10 @@ fun SettingsScreen(
             }
         }
 
+        // ==================== DNS 设置 ====================
         item {
-            AppSection(title = { Text("DNS", style = MaterialTheme.typography.titleMedium) }) {
-                AppCard(modifier = Modifier.fillMaxWidth()) {
+            Section(title = { Text("DNS", style = MaterialTheme.typography.titleMedium) }) {
+                NeoCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingDropdownRow(
                             title = "解析策略",
@@ -191,12 +211,14 @@ fun SettingsScreen(
                             selected = dnsStrategy,
                             onSelected = { dnsStrategy = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "启用缓存",
-                            description = "缓存 DNS 解析结果以提升速度",
+                            description = "缓存 DNS 解析结果",
                             checked = dnsCacheEnabled,
                             onCheckedChange = { dnsCacheEnabled = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "独立缓存",
                             description = "各 DNS 服务器使用独立缓存",
@@ -208,32 +230,36 @@ fun SettingsScreen(
             }
         }
 
+        // ==================== TUN/VPN 设置 ====================
         item {
-            AppSection(title = { Text("TUN / VPN", style = MaterialTheme.typography.titleMedium) }) {
-                AppCard(modifier = Modifier.fillMaxWidth()) {
+            Section(title = { Text("TUN / VPN", style = MaterialTheme.typography.titleMedium) }) {
+                NeoCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingNumberField(
                             title = "MTU",
                             description = "推荐范围 1280-9000",
                             value = tunMtuInput,
                             onValueChange = { tunMtuInput = it },
-                            placeholder = "例如 9000"
+                            placeholder = "9000"
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "自动路由",
                             description = "将默认路由指向 TUN",
                             checked = tunAutoRoute,
                             onCheckedChange = { tunAutoRoute = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "严格路由",
-                            description = "限制非路由流量通过 TUN",
+                            description = "限制非路由流量",
                             checked = tunStrictRoute,
                             onCheckedChange = { tunStrictRoute = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "系统 HTTP 代理",
-                            description = "自动配置系统 HTTP 代理",
+                            description = "自动配置系统代理",
                             checked = httpProxyEnabled,
                             onCheckedChange = { httpProxyEnabled = it }
                         )
@@ -242,39 +268,43 @@ fun SettingsScreen(
             }
         }
 
+        // ==================== 本地代理设置 ====================
         item {
-            AppSection(title = { Text("本地代理", style = MaterialTheme.typography.titleMedium) }) {
-                AppCard(modifier = Modifier.fillMaxWidth()) {
+            Section(title = { Text("本地代理", style = MaterialTheme.typography.titleMedium) }) {
+                NeoCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingNumberField(
                             title = "Mixed 端口",
-                            description = "本地 HTTP/SOCKS 混合端口",
+                            description = "HTTP/SOCKS 混合端口",
                             value = mixedPortInput,
                             onValueChange = { mixedPortInput = it },
-                            placeholder = "例如 1082"
+                            placeholder = "1082"
                         )
+                        NeoDivider()
                         SettingNumberField(
                             title = "SOCKS 端口",
-                            description = "本地 SOCKS 代理端口",
+                            description = "SOCKS 代理端口",
                             value = socksPortInput,
                             onValueChange = { socksPortInput = it },
-                            placeholder = "例如 7888"
+                            placeholder = "7888"
                         )
                     }
                 }
             }
         }
 
+        // ==================== 实验功能 ====================
         item {
-            AppSection(title = { Text("实验功能", style = MaterialTheme.typography.titleMedium) }) {
-                AppCard(modifier = Modifier.fillMaxWidth()) {
+            Section(title = { Text("实验功能", style = MaterialTheme.typography.titleMedium) }) {
+                NeoCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingSwitchRow(
                             title = "规则缓存",
-                            description = "缓存规则文件减少重复下载",
+                            description = "缓存规则文件减少下载",
                             checked = cacheFileEnabled,
                             onCheckedChange = { cacheFileEnabled = it }
                         )
+                        NeoDivider()
                         SettingSwitchRow(
                             title = "Clash API",
                             description = "启用外部控制端口",
@@ -282,6 +312,7 @@ fun SettingsScreen(
                             onCheckedChange = { clashApiEnabled = it }
                         )
                         if (clashApiEnabled) {
+                            NeoDivider()
                             SettingTextField(
                                 title = "控制地址",
                                 description = "用于面板或外部控制",
@@ -295,22 +326,28 @@ fun SettingsScreen(
             }
         }
 
+        // ==================== 保存按钮 ====================
         item {
-            Button(
+            PrimaryButton(
+                text = if (isSaving) "保存中..." else "保存并应用",
                 onClick = { saveSettings() },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isSaving
-            ) {
-                Text(if (isSaving) "保存中..." else "保存并应用")
-            }
+            )
         }
 
+        // 底部留白
         item {
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
+// ==================== 设置项组件 ====================
+
+/**
+ * 开关设置行
+ */
 @Composable
 private fun SettingSwitchRow(
     title: String,
@@ -318,6 +355,8 @@ private fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -327,17 +366,24 @@ private fun SettingSwitchRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
             Text(
                 text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
+/**
+ * 下拉选择设置行
+ */
 @Composable
 private fun SettingDropdownRow(
     title: String,
@@ -347,8 +393,10 @@ private fun SettingDropdownRow(
     selected: String,
     onSelected: (String) -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(false) }
     val label = labels[selected] ?: selected
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -358,11 +406,15 @@ private fun SettingDropdownRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
             Text(
                 text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant
             )
         }
         Box {
@@ -384,6 +436,9 @@ private fun SettingDropdownRow(
     }
 }
 
+/**
+ * 数字输入设置
+ */
 @Composable
 private fun SettingNumberField(
     title: String,
@@ -392,12 +447,18 @@ private fun SettingNumberField(
     onValueChange: (String) -> Unit,
     placeholder: String
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text = title, style = MaterialTheme.typography.titleSmall)
+    val scheme = MaterialTheme.colorScheme
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
         Text(
             text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelMedium,
+            color = scheme.onSurfaceVariant
         )
         OutlinedTextField(
             value = value,
@@ -410,6 +471,9 @@ private fun SettingNumberField(
     }
 }
 
+/**
+ * 文本输入设置
+ */
 @Composable
 private fun SettingTextField(
     title: String,
@@ -418,12 +482,18 @@ private fun SettingTextField(
     onValueChange: (String) -> Unit,
     placeholder: String
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text = title, style = MaterialTheme.typography.titleSmall)
+    val scheme = MaterialTheme.colorScheme
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
         Text(
             text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelMedium,
+            color = scheme.onSurfaceVariant
         )
         OutlinedTextField(
             value = value,
@@ -434,6 +504,8 @@ private fun SettingTextField(
         )
     }
 }
+
+// ==================== 常量定义 ====================
 
 private val LOG_LEVELS = listOf("trace", "debug", "info", "warn", "error")
 private val LOG_LEVEL_LABELS = mapOf(
