@@ -131,8 +131,19 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # 创建密钥存储
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          # 调试：检查环境变量
+          echo "KEYSTORE_BASE64 length: ${#KEYSTORE_BASE64}"
+          echo "KEYSTORE_PASSWORD: ${KEYSTORE_PASSWORD:0:3}***"
+          echo "KEY_ALIAS: $KEY_ALIAS"
+
+          # 创建密钥存储（移除可能的空白字符）
+          echo "$KEYSTORE_BASE64" | tr -d ' \n\r' | base64 -d > release.keystore
+
+          # 验证密钥文件是否创建成功
+          if [ ! -s release.keystore ]; then
+            echo "错误: 密钥文件创建失败或为空！"
+            exit 1
+          fi
 
           # 验证密钥文件
           if ! keytool -list -keystore release.keystore -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
