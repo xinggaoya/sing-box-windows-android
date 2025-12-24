@@ -92,14 +92,8 @@ class AppVpnService : android.net.VpnService() {
             val result = runCatching {
                 val rawConfig = ConfigRepository.loadOrCreateConfig(this@AppVpnService)
                 val settings = SettingsRepository.load(this@AppVpnService)
-                if (settings.clashApiEnabled) {
-                    val address = settings.clashApiAddress.trim().ifBlank {
-                        AppSettingsDefaults.CLASH_API_ADDRESS
-                    }
-                    ClashApiClient.configure(address, ClashApiDefaults.SECRET)
-                } else {
-                    ClashApiClient.reset()
-                }
+                // 默认启用 Clash API 用于节点管理
+                ClashApiClient.configure(ClashApiDefaults.ADDRESS, ClashApiDefaults.SECRET)
                 val appliedConfig = ConfigSettingsApplier.applySettings(rawConfig, settings)
                 ConfigRepository.saveConfig(this@AppVpnService, appliedConfig)
                 SingBoxEngine.start(appliedConfig, platform)

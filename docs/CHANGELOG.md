@@ -1,5 +1,44 @@
 # Sing Box Windows - Android VPN 客户端
 
+## v1.2.0 (2025-12-24)
+
+### 主要更新
+
+#### 应用自动更新功能
+- **完整的应用内更新系统**：支持检查更新、下载和安装新版本
+- **GitHub Release 集成**：自动从 GitHub Releases 获取最新版本信息
+- **智能架构匹配**：根据设备 CPU 架构自动选择对应的 APK 文件
+- **断点续传支持**：下载支持进度显示和断点续传
+- **Wi-Fi 下载限制**：可设置仅在 Wi-Fi 环境下下载更新
+- **安装权限管理**：自动检测并引导用户开启安装权限
+
+#### 设置页面重构
+- **代码简化**：移除冗余的状态变量，统一使用 `AppSettings` 数据类
+- **新增更新卡片**：在设置页面集成应用更新功能入口
+- **UI 优化**：使用 `UpdateSection` 组件展示版本信息和更新状态
+
+### 技术改进
+
+#### 更新模块架构 (`update/`)
+- **UpdateManager**: 统一更新流程管理器（检查、下载、安装）
+- **GitHubReleaseChecker**: GitHub API 版本检查器，支持加速代理
+- **ApkDownloader**: APK 文件下载器，支持进度回调
+- **AppUpdateInstaller**: APK 安装器，适配不同 Android 版本
+- **UpdateStore**: 更新状态管理，使用 StateFlow 响应式更新
+- **UpdateSection.kt**: 更新 UI 组件，包含版本显示、更新对话框等
+
+#### 依赖配置
+- 新增 `kotlinx-serialization-json` 用于 JSON 解析
+- 配置 `kotlin-parcelize` 插件支持 Parcelable
+- 添加 `REQUEST_INSTALL_PACKAGES` 权限用于 APK 安装
+- 配置 FileProvider 用于安全分享 APK 文件
+
+#### 其他改进
+- 优化 GitHub Actions 构建流程配置
+- 修复签名步骤的 Base64 解码问题
+
+---
+
 ## v1.1.0 (2025-12-23)
 
 ### 主要更新

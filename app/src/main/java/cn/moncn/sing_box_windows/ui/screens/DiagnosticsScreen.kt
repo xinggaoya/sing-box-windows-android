@@ -67,11 +67,9 @@ fun DiagnosticsScreen(
         val appliedConfig = ConfigSettingsApplier.applySettings(rawConfig, settings)
         configInfo = parseConfigInfo(settings, appliedConfig)
         ClashApiClient.configureFromConfig(appliedConfig)
-        if (!ClashApiClient.isConfigured() && settings.clashApiEnabled) {
-            val address = settings.clashApiAddress.trim().ifBlank {
-                AppSettingsDefaults.CLASH_API_ADDRESS
-            }
-            ClashApiClient.configure(address, ClashApiDefaults.SECRET)
+        // 默认启用 Clash API 用于诊断
+        if (!ClashApiClient.isConfigured()) {
+            ClashApiClient.configure(ClashApiDefaults.ADDRESS, ClashApiDefaults.SECRET)
         }
     }
 
@@ -300,8 +298,8 @@ private fun parseConfigInfo(
         ?: ""
     val hasSecret = !clashApi?.optString("secret").isNullOrBlank()
     return ConfigInfo(
-        settingsEnabled = settings.clashApiEnabled,
-        settingsAddress = settings.clashApiAddress.trim(),
+        settingsEnabled = true, // 默认启用
+        settingsAddress = ClashApiDefaults.ADDRESS,
         configEnabled = clashApi != null,
         configAddress = address.trim(),
         configHasSecret = hasSecret

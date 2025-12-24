@@ -49,6 +49,7 @@ import cn.moncn.sing_box_windows.ui.components.NeoCard
 import cn.moncn.sing_box_windows.ui.components.NeoDivider
 import cn.moncn.sing_box_windows.ui.components.PrimaryButton
 import cn.moncn.sing_box_windows.ui.components.Section
+import cn.moncn.sing_box_windows.ui.components.UpdateSection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,8 +67,6 @@ fun SettingsScreen(
 
     // 设置状态
     var currentSettings by remember { mutableStateOf(AppSettings()) }
-    var logLevel by remember { mutableStateOf(AppSettingsDefaults.LOG_LEVEL) }
-    var logTimestamp by remember { mutableStateOf(AppSettingsDefaults.LOG_TIMESTAMP) }
     var dnsStrategy by remember { mutableStateOf(AppSettingsDefaults.DNS_STRATEGY) }
     var dnsCacheEnabled by remember { mutableStateOf(AppSettingsDefaults.DNS_CACHE_ENABLED) }
     var dnsIndependentCache by remember { mutableStateOf(AppSettingsDefaults.DNS_INDEPENDENT_CACHE) }
@@ -75,19 +74,12 @@ fun SettingsScreen(
     var tunAutoRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_AUTO_ROUTE) }
     var tunStrictRoute by remember { mutableStateOf(AppSettingsDefaults.TUN_STRICT_ROUTE) }
     var httpProxyEnabled by remember { mutableStateOf(AppSettingsDefaults.HTTP_PROXY_ENABLED) }
-    var mixedPortInput by remember { mutableStateOf(AppSettingsDefaults.MIXED_PORT.toString()) }
-    var socksPortInput by remember { mutableStateOf(AppSettingsDefaults.SOCKS_PORT.toString()) }
-    var cacheFileEnabled by remember { mutableStateOf(AppSettingsDefaults.CACHE_FILE_ENABLED) }
-    var clashApiEnabled by remember { mutableStateOf(AppSettingsDefaults.CLASH_API_ENABLED) }
-    var clashApiAddress by remember { mutableStateOf(AppSettingsDefaults.CLASH_API_ADDRESS) }
     var isSaving by remember { mutableStateOf(false) }
 
     // 加载设置
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { SettingsRepository.load(context) }
         currentSettings = loaded
-        logLevel = loaded.logLevel
-        logTimestamp = loaded.logTimestamp
         dnsStrategy = loaded.dnsStrategy
         dnsCacheEnabled = loaded.dnsCacheEnabled
         dnsIndependentCache = loaded.dnsIndependentCache
@@ -95,36 +87,21 @@ fun SettingsScreen(
         tunAutoRoute = loaded.tunAutoRoute
         tunStrictRoute = loaded.tunStrictRoute
         httpProxyEnabled = loaded.httpProxyEnabled
-        mixedPortInput = loaded.mixedInboundPort.toString()
-        socksPortInput = loaded.socksInboundPort.toString()
-        cacheFileEnabled = loaded.cacheFileEnabled
-        clashApiEnabled = loaded.clashApiEnabled
-        clashApiAddress = loaded.clashApiAddress
     }
 
     // 保存设置
     fun saveSettings() {
         if (isSaving) return
         val normalizedMtu = tunMtuInput.toIntOrNull()?.coerceIn(1280, 9000) ?: currentSettings.tunMtu
-        val normalizedMixedPort = mixedPortInput.toIntOrNull()?.coerceIn(1024, 65535) ?: currentSettings.mixedInboundPort
-        val normalizedSocksPort = socksPortInput.toIntOrNull()?.coerceIn(1024, 65535) ?: currentSettings.socksInboundPort
-        val normalizedClashApiAddress = clashApiAddress.trim().ifBlank { currentSettings.clashApiAddress }
 
         val newSettings = currentSettings.copy(
-            logLevel = logLevel,
-            logTimestamp = logTimestamp,
             dnsStrategy = dnsStrategy,
             dnsCacheEnabled = dnsCacheEnabled,
             dnsIndependentCache = dnsIndependentCache,
             tunMtu = normalizedMtu,
             tunAutoRoute = tunAutoRoute,
             tunStrictRoute = tunStrictRoute,
-            httpProxyEnabled = httpProxyEnabled,
-            mixedInboundPort = normalizedMixedPort,
-            socksInboundPort = normalizedSocksPort,
-            cacheFileEnabled = cacheFileEnabled,
-            clashApiEnabled = clashApiEnabled,
-            clashApiAddress = normalizedClashApiAddress
+            httpProxyEnabled = httpProxyEnabled
         )
 
         isSaving = true
@@ -135,9 +112,6 @@ fun SettingsScreen(
             }
             currentSettings = newSettings
             tunMtuInput = newSettings.tunMtu.toString()
-            mixedPortInput = newSettings.mixedInboundPort.toString()
-            socksPortInput = newSettings.socksInboundPort.toString()
-            clashApiAddress = newSettings.clashApiAddress
             isSaving = false
             onShowMessage(
                 MessageDialogState(
@@ -173,29 +147,9 @@ fun SettingsScreen(
             }
         }
 
-        // ==================== 内核日志设置 ====================
+        // ==================== 应用更新 ====================
         item {
-            Section(title = { Text("内核日志", style = MaterialTheme.typography.titleMedium) }) {
-                NeoCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SettingDropdownRow(
-                            title = "日志级别",
-                            description = "决定日志输出详细程度",
-                            options = LOG_LEVELS,
-                            labels = LOG_LEVEL_LABELS,
-                            selected = logLevel,
-                            onSelected = { logLevel = it }
-                        )
-                        NeoDivider()
-                        SettingSwitchRow(
-                            title = "时间戳",
-                            description = "记录日志时追加时间信息",
-                            checked = logTimestamp,
-                            onCheckedChange = { logTimestamp = it }
-                        )
-                    }
-                }
-            }
+            UpdateSection()
         }
 
         // ==================== DNS 设置 ====================
@@ -263,64 +217,6 @@ fun SettingsScreen(
                             checked = httpProxyEnabled,
                             onCheckedChange = { httpProxyEnabled = it }
                         )
-                    }
-                }
-            }
-        }
-
-        // ==================== 本地代理设置 ====================
-        item {
-            Section(title = { Text("本地代理", style = MaterialTheme.typography.titleMedium) }) {
-                NeoCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SettingNumberField(
-                            title = "Mixed 端口",
-                            description = "HTTP/SOCKS 混合端口",
-                            value = mixedPortInput,
-                            onValueChange = { mixedPortInput = it },
-                            placeholder = "1082"
-                        )
-                        NeoDivider()
-                        SettingNumberField(
-                            title = "SOCKS 端口",
-                            description = "SOCKS 代理端口",
-                            value = socksPortInput,
-                            onValueChange = { socksPortInput = it },
-                            placeholder = "7888"
-                        )
-                    }
-                }
-            }
-        }
-
-        // ==================== 实验功能 ====================
-        item {
-            Section(title = { Text("实验功能", style = MaterialTheme.typography.titleMedium) }) {
-                NeoCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SettingSwitchRow(
-                            title = "规则缓存",
-                            description = "缓存规则文件减少下载",
-                            checked = cacheFileEnabled,
-                            onCheckedChange = { cacheFileEnabled = it }
-                        )
-                        NeoDivider()
-                        SettingSwitchRow(
-                            title = "Clash API",
-                            description = "启用外部控制端口",
-                            checked = clashApiEnabled,
-                            onCheckedChange = { clashApiEnabled = it }
-                        )
-                        if (clashApiEnabled) {
-                            NeoDivider()
-                            SettingTextField(
-                                title = "控制地址",
-                                description = "用于面板或外部控制",
-                                value = clashApiAddress,
-                                onValueChange = { clashApiAddress = it },
-                                placeholder = "127.0.0.1:9090"
-                            )
-                        }
                     }
                 }
             }
@@ -506,15 +402,6 @@ private fun SettingTextField(
 }
 
 // ==================== 常量定义 ====================
-
-private val LOG_LEVELS = listOf("trace", "debug", "info", "warn", "error")
-private val LOG_LEVEL_LABELS = mapOf(
-    "trace" to "Trace",
-    "debug" to "Debug",
-    "info" to "Info",
-    "warn" to "Warn",
-    "error" to "Error"
-)
 
 private val DNS_STRATEGIES = listOf("prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
 private val DNS_STRATEGY_LABELS = mapOf(

@@ -43,6 +43,8 @@ import cn.moncn.sing_box_windows.core.CoreStatusManager
 import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.OutboundGroupManager
 import cn.moncn.sing_box_windows.core.ClashModeManager
+import cn.moncn.sing_box_windows.update.UpdateManager
+import cn.moncn.sing_box_windows.update.UpdateStore
 import cn.moncn.sing_box_windows.ui.MessageDialogState
 import cn.moncn.sing_box_windows.ui.MessageTone
 import cn.moncn.sing_box_windows.ui.AppNavigation
@@ -58,6 +60,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LibboxManager.initialize(this)
+        // 初始化 UpdateStore，加载持久化设置
+        UpdateStore.init(this)
         enableEdgeToEdge()
         setContent {
             SingboxwindowsTheme {
@@ -94,14 +98,8 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(state, appSettings) {
                     val settings = appSettings ?: return@LaunchedEffect
                     if (state == VpnState.CONNECTED || state == VpnState.CONNECTING) {
-                        if (settings.clashApiEnabled) {
-                            val address = settings.clashApiAddress.trim().ifBlank {
-                                AppSettingsDefaults.CLASH_API_ADDRESS
-                            }
-                            ClashApiClient.configure(address, ClashApiDefaults.SECRET)
-                        } else {
-                            ClashApiClient.reset()
-                        }
+                        // 默认启用 Clash API 用于节点管理
+                        ClashApiClient.configure(ClashApiDefaults.ADDRESS, ClashApiDefaults.SECRET)
                         CoreStatusManager.start()
                         OutboundGroupManager.start()
                         ClashModeManager.start()
@@ -192,6 +190,13 @@ class MainActivity : ComponentActivity() {
                             notificationLauncher.launch(permission)
                         }
                     }
+                }
+
+                // ==================== 自动检查更新 ====================
+                LaunchedEffect(Unit) {
+                    // 延迟检查更新，避免影响启动速度
+                    kotlinx.coroutines.delay(2000)
+                    UpdateManager.getInstance(context).autoCheckIfNeeded()
                 }
 
                 if (dialogMessage != null) {
