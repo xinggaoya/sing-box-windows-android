@@ -129,11 +129,8 @@ cd singboxwindows
 
 ### GitHub Automated APK Build
 
-- Continuous build: `.github/workflows/build-apk.yml`
-  - Trigger: `push(main/master/dev/develop)`, `workflow_dispatch`
-  - Output: signed Release APK artifacts (runs `scripts/update-libbox.sh` before build)
-- Tag release: `.github/workflows/release.yml`
-  - Trigger: `push tag v*`
+- Single workflow: `.github/workflows/release.yml`
+  - Trigger: `push tag v*` (for example `v1.2.1`)
   - Behavior: update latest libbox AAR first, then build signed Release APKs and create GitHub Release automatically
 
 Signing is intentionally hardcoded (no environment variables):

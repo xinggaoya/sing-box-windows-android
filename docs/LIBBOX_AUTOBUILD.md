@@ -49,12 +49,11 @@
 
 ## CI 自动化
 
-仓库新增工作流 `.github/workflows/update-libbox.yml`：
+仓库仅保留发布工作流 `.github/workflows/release.yml`：
 
-1. 支持手动触发 `workflow_dispatch`（可指定版本）。
-2. 每周定时触发（北京时间周一上午，对应 UTC 周一 02:30）。
-3. 构建完成后上传 AAR Artifact。
-4. 可自动创建更新 PR（包含 `libbox.aar` 和元数据）。
+1. 通过推送版本标签（`v*`）触发发布构建。
+2. 构建 APK 前会自动执行 `scripts/update-libbox.sh` 拉取并编译最新内核。
+3. 自动产出已签名 Release APK 并创建 GitHub Release。
 
 ## 版本追踪
 

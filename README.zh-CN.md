@@ -129,11 +129,8 @@ cd singboxwindows
 
 ### GitHub 自动化编译 APK
 
-- 持续构建：`.github/workflows/build-apk.yml`
-  - 触发：`push(main/master/dev/develop)`、`workflow_dispatch`
-  - 输出：已签名 Release APK artifacts（构建前会自动执行 `scripts/update-libbox.sh`）
-- 标签发布：`.github/workflows/release.yml`
-  - 触发：`push tag v*`
+- 单一工作流：`.github/workflows/release.yml`
+  - 触发：`push tag v*`（例如 `v1.2.1`）
   - 行为：先更新最新内核 AAR，再构建已签名 Release APK 并自动创建 GitHub Release
 
 签名配置已按需求写死（不使用环境变量）：

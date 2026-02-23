@@ -100,7 +100,7 @@
 ## 6. 本轮已执行项
 
 1. 新增 `scripts/update-libbox.sh`：自动拉取并构建 `libbox.aar`。
-2. 新增 `.github/workflows/update-libbox.yml`：支持定时/手动自动更新。
+2. 调整 `.github/workflows/release.yml`：发布构建前自动执行 `scripts/update-libbox.sh` 更新内核。
 3. 新增 `docs/LIBBOX_AUTOBUILD.md`：内核构建链路说明。
 4. 新增 v2 架构骨架与依赖装配（MVI + V2Graph）。
 5. 新增 v2 完整页面链路（首页/订阅/节点/设置/诊断）。
