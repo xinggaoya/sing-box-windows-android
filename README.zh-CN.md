@@ -138,6 +138,12 @@ cd singboxwindows
 - Keystore 文件：`app/signing/release.jks`
 - 签名参数：`app/build.gradle` → `android.signingConfigs.release`
 
+### 应用内更新
+
+- 用户流程：检查更新 -> 下载 APK -> 点击系统通知安装
+- 兜底路径：若通知不可见，可在设置页点击“安装已下载包”
+- 详细说明：`docs/IN_APP_UPDATE.md`
+
 ### 自动更新 libbox 内核 AAR
 
 ```bash

@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.update
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -36,20 +37,7 @@ class AppUpdateInstaller(private val context: Context) {
         return try {
             Log.d("AppUpdateInstaller", "installApk called, file: ${apkFile.absolutePath}, exists: ${apkFile.exists()}, size: ${apkFile.length()}")
 
-            if (!apkFile.exists()) {
-                throw IllegalStateException("APK 文件不存在: ${apkFile.absolutePath}")
-            }
-
-            val authority = "${context.packageName}.fileprovider"
-            Log.d("AppUpdateInstaller", "FileProvider authority: $authority")
-            val uri: Uri = FileProvider.getUriForFile(context, authority, apkFile)
-            Log.d("AppUpdateInstaller", "FileProvider URI: $uri")
-
-            // 使用 ACTION_VIEW，先设置 data，再设置 type
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
+            val intent = buildInstallIntent(apkFile)
 
             Log.d("AppUpdateInstaller", "Starting install intent, action: ${intent.action}, type: ${intent.type}")
             context.startActivity(intent)
@@ -60,6 +48,39 @@ class AppUpdateInstaller(private val context: Context) {
             e.printStackTrace()
             false
         }
+    }
+
+    /**
+     * 构建 APK 安装 Intent。
+     * 供通知点击和直接安装复用同一逻辑，避免行为不一致。
+     */
+    fun buildInstallIntent(apkFile: File): Intent {
+        if (!apkFile.exists()) {
+            throw IllegalStateException("APK 文件不存在: ${apkFile.absolutePath}")
+        }
+
+        val authority = "${context.packageName}.fileprovider"
+        Log.d("AppUpdateInstaller", "FileProvider authority: $authority")
+        val uri: Uri = FileProvider.getUriForFile(context, authority, apkFile)
+        Log.d("AppUpdateInstaller", "FileProvider URI: $uri")
+
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+    }
+
+    /**
+     * 构建点击通知后可直接触发安装的 PendingIntent。
+     */
+    fun buildInstallPendingIntent(apkFile: File, requestCode: Int = 0): PendingIntent {
+        val intent = buildInstallIntent(apkFile)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        return PendingIntent.getActivity(context, requestCode, intent, flags)
     }
 
     /**

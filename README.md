@@ -138,6 +138,12 @@ Signing is intentionally hardcoded (no environment variables):
 - Keystore file: `app/signing/release.jks`
 - Signing params: `app/build.gradle` -> `android.signingConfigs.release`
 
+### In-App Update
+
+- User flow: check update -> download APK -> tap system notification to install
+- Fallback: if notification is unavailable, install from Settings page "Install downloaded package"
+- Details: `docs/IN_APP_UPDATE.md`
+
 ### Auto Update libbox AAR
 
 ```bash

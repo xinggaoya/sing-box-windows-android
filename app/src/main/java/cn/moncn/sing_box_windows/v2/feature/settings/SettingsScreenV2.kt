@@ -18,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cn.moncn.sing_box_windows.update.UpdateState
 import cn.moncn.sing_box_windows.v2.domain.settings.SettingsGateway
 
 private val DNS_STRATEGIES = listOf("prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
@@ -93,6 +95,9 @@ private fun SettingsScreenV2(
     onIntent: (SettingsIntent) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val updateState = state.updateState
+    val isCheckingUpdate = updateState is UpdateState.Checking
+    val isDownloadingUpdate = updateState is UpdateState.Downloading
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -193,14 +198,111 @@ private fun SettingsScreenV2(
                     Button(
                         onClick = { onIntent(SettingsIntent.CheckUpdate) },
                         modifier = Modifier.weight(1f),
-                        enabled = !state.isSaving
+                        enabled = !state.isSaving && !isCheckingUpdate && !isDownloadingUpdate
                     ) {
-                        Text("检查更新")
+                        Text(
+                            when {
+                                isCheckingUpdate -> "检查中..."
+                                isDownloadingUpdate -> "下载中..."
+                                else -> "检查更新"
+                            }
+                        )
                     }
                 }
             }
 
+            item {
+                UpdateCard(
+                    updateState = state.updateState,
+                    onIntent = onIntent
+                )
+            }
+
             item { Spacer(modifier = Modifier.height(20.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun UpdateCard(
+    updateState: UpdateState,
+    onIntent: (SettingsIntent) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        shape = RoundedCard,
+        colors = CardDefaults.cardColors(containerColor = scheme.surface.copy(alpha = 0.94f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("应用更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            when (updateState) {
+                UpdateState.Idle -> {
+                    Text("点击“检查更新”以获取最新版本。", color = scheme.onSurfaceVariant)
+                }
+
+                UpdateState.Checking -> {
+                    Text("正在检查新版本...", color = scheme.onSurfaceVariant)
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+
+                UpdateState.UpToDate -> {
+                    Text("当前已是最新版本。", color = scheme.primary)
+                }
+
+                is UpdateState.UpdateAvailable -> {
+                    val release = updateState.releaseInfo
+                    Text("发现新版本：${release.tagName}", fontWeight = FontWeight.Medium)
+                    if (release.name.isNotBlank()) {
+                        Text(release.name, color = scheme.onSurfaceVariant)
+                    }
+                    Text(
+                        "发布时间：${release.publishedAt}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                    Button(onClick = { onIntent(SettingsIntent.DownloadUpdate) }) {
+                        Text("下载更新包")
+                    }
+                }
+
+                is UpdateState.Downloading -> {
+                    val progress = updateState.progress
+                    Text("正在下载：${updateState.releaseInfo.tagName}", fontWeight = FontWeight.Medium)
+                    LinearProgressIndicator(
+                        progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "${progress.getPercentageString()}  ${progress.getDownloadedSizeReadable()} / ${progress.getTotalSizeReadable()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                }
+
+                is UpdateState.ReadyToInstall -> {
+                    Text("下载完成：${updateState.releaseInfo.tagName}", fontWeight = FontWeight.Medium)
+                    Text(
+                        "下载包已就绪。可点击系统通知安装；若通知不可见，可用下方按钮安装。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onIntent(SettingsIntent.InstallDownloadedUpdate) }) {
+                            Text("安装已下载包")
+                        }
+                        TextButton(onClick = { onIntent(SettingsIntent.CheckUpdate) }) {
+                            Text("重新检查")
+                        }
+                    }
+                }
+
+                is UpdateState.Failed -> {
+                    Text("更新失败：${updateState.error}", color = scheme.error)
+                }
+            }
         }
     }
 }

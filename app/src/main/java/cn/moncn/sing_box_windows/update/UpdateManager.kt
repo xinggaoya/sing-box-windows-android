@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 应用更新管理器
@@ -26,6 +25,7 @@ class UpdateManager(private val context: Context) {
     private val checker = GitHubReleaseChecker(context, config)
     private val downloader = ApkDownloader(context)
     private val installer = AppUpdateInstaller(context)
+    private val notificationHelper = UpdateNotificationHelper(context, installer)
 
     /**
      * 获取当前应用版本号
@@ -109,9 +109,9 @@ class UpdateManager(private val context: Context) {
         val downloadedFile = downloader.getDownloadedApk(asset)
         if (downloadedFile != null) {
             Log.d("UpdateManager", "File already downloaded: ${downloadedFile.absolutePath}")
-            // 下载完成，直接触发安装
-            installer.installApk(downloadedFile)
-            UpdateStore.reset()
+            // 已有安装包：同步状态并发送安装通知（不自动安装）
+            UpdateStore.update(UpdateState.ReadyToInstall(release, downloadedFile))
+            notificationHelper.showDownloadCompleted(release, downloadedFile)
             return
         }
 
@@ -134,6 +134,7 @@ class UpdateManager(private val context: Context) {
                     UpdateStore.update(
                         UpdateState.Downloading(release, progress)
                     )
+                    notificationHelper.showDownloadProgress(release, progress)
                 }
                 .onCompletion { cause ->
                     Log.d("UpdateManager", "Download completed, cause: $cause")
@@ -141,16 +142,15 @@ class UpdateManager(private val context: Context) {
                         val file = downloader.getDownloadedApk(asset)
                         if (file != null) {
                             Log.d("UpdateManager", "Downloaded file: ${file.absolutePath}, size: ${file.length()}")
-                            // 下载完成，直接触发安装
-                            val installSuccess = installer.installApk(file)
-                            Log.d("UpdateManager", "Install launched: $installSuccess")
-                            // 重置状态
-                            UpdateStore.reset()
+                            UpdateStore.update(UpdateState.ReadyToInstall(release, file))
+                            val notified = notificationHelper.showDownloadCompleted(release, file)
+                            Log.d("UpdateManager", "Download complete notification sent: $notified")
                         } else {
                             Log.e("UpdateManager", "Downloaded file not found")
                             UpdateStore.update(
                                 UpdateState.Failed("下载文件验证失败")
                             )
+                            notificationHelper.showDownloadFailed("下载文件验证失败")
                         }
                     } else {
                         Log.e("UpdateManager", "Download failed: ${cause.message}", cause)
@@ -161,6 +161,7 @@ class UpdateManager(private val context: Context) {
                     UpdateStore.update(
                         UpdateState.Failed("下载失败: ${e.message}")
                     )
+                    notificationHelper.showDownloadFailed("下载失败: ${e.message}")
                 }
                 .launchIn(this@launch)
         }
