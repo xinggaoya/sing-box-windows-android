@@ -177,8 +177,13 @@ cleanup() {
         return
     fi
     if [[ -n "$WORKDIR" && -d "$WORKDIR" ]]; then
-        rm -rf "$WORKDIR"
-        log "已清理临时目录"
+        # 部分构建步骤（如容器内生成）可能产生当前用户不可删除文件，清理失败不应导致整体构建失败。
+        chmod -R u+rwX "$WORKDIR" >/dev/null 2>&1 || true
+        if rm -rf "$WORKDIR" >/dev/null 2>&1; then
+            log "已清理临时目录"
+        else
+            warn "临时目录清理失败，已保留: $WORKDIR"
+        fi
     fi
 }
 
