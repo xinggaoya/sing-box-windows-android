@@ -80,9 +80,24 @@ object TemplateConfigBuilder {
         return NodeParseResult(nodes, warnings)
     }
 
-    
+    private data class NormalizedNodeSet(
+        val nodes: List<JSONObject>,
+        val tags: List<String>
+    )
+
     private fun buildTemplate(nodes: List<JSONObject>): String {
-        val outbounds = JSONArray()
+        val normalizedNodeSet = normalizeNodes(nodes)
+        val config = JSONObject()
+            .put("log", buildLogConfig())
+            .put("dns", buildDnsConfig())
+            .put("inbounds", buildInbounds())
+            .put("outbounds", buildOutbounds(normalizedNodeSet))
+            .put("route", buildRouteConfig())
+            .put("experimental", buildExperimentalConfig())
+        return config.toString(2)
+    }
+
+    private fun normalizeNodes(nodes: List<JSONObject>): NormalizedNodeSet {
         val usedTags = linkedSetOf(
             TAG_DIRECT,
             TAG_LOCAL,
@@ -97,7 +112,6 @@ object TemplateConfigBuilder {
             TAG_MICROSOFT,
             TAG_GITHUB
         )
-
         val normalizedNodes = nodes.mapIndexed { index, node ->
             val copied = JSONObject(node.toString())
             val originalTag = copied.optString("tag").ifBlank { "Node-${index + 1}" }
@@ -108,8 +122,13 @@ object TemplateConfigBuilder {
             usedTags.add(safeTag)
             copied
         }
-
         val nodeTags = normalizedNodes.map { it.optString("tag") }
+        return NormalizedNodeSet(nodes = normalizedNodes, tags = nodeTags)
+    }
+
+    private fun buildOutbounds(normalizedNodeSet: NormalizedNodeSet): JSONArray {
+        val outbounds = JSONArray()
+        val nodeTags = normalizedNodeSet.tags
 
         val autoGroup = JSONObject()
             .put("type", "urltest")
@@ -182,9 +201,12 @@ object TemplateConfigBuilder {
         )
 
         outbounds.put(JSONObject().put("type", "direct").put("tag", TAG_DIRECT))
-        normalizedNodes.forEach { outbounds.put(it) }
+        normalizedNodeSet.nodes.forEach { outbounds.put(it) }
+        return outbounds
+    }
 
-        val dns = JSONObject()
+    private fun buildDnsConfig(): JSONObject {
+        return JSONObject()
             .put(
                 "servers",
                 JSONArray()
@@ -258,7 +280,9 @@ object TemplateConfigBuilder {
             .put("independent_cache", true)
             .put("strategy", "prefer_ipv4")
             .put("final", TAG_DNS_DIRECT)
+    }
 
+    private fun buildRouteConfig(): JSONObject {
         val routeRules = JSONArray()
             .put(JSONObject().put("action", "sniff"))
             .put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
@@ -323,7 +347,7 @@ object TemplateConfigBuilder {
                     .put("outbound", TAG_LOCAL)
             )
 
-        val route = JSONObject()
+        return JSONObject()
             .put("rules", routeRules)
             .put("final", TAG_LOCAL)
             .put("auto_detect_interface", true)
@@ -481,7 +505,9 @@ object TemplateConfigBuilder {
                             .put("update_interval", "1d")
                     )
             )
+    }
 
+    private fun buildInbounds(): JSONArray {
         val inbound = JSONObject()
             .put("type", "tun")
             .put("tag", "tun-in")
@@ -521,41 +547,38 @@ object TemplateConfigBuilder {
             .put("listen", "127.0.0.1")
             .put("listen_port", 7888)
 
-        val config = JSONObject()
-            .put(
-                "log",
-                JSONObject()
-                    .put("disabled", false)
-                    .put("level", "info")
-                    .put("timestamp", true)
-            )
-            .put("dns", dns)
-            .put("inbounds", JSONArray().put(inbound).put(mixedInbound).put(socksInbound))
-            .put("outbounds", outbounds)
-            .put("route", route)
-            .put(
-                "experimental",
-                JSONObject()
-                    .put(
-                        "cache_file",
-                        JSONObject()
-                            .put("enabled", true)
-                    )
-                    .put(
-                        "clash_api",
-                        JSONObject()
-                            .put("default_mode", "rule")
-                            .put("external_controller", "127.0.0.1:9090")
-                            .put("external_ui", "metacubexd")
-                            .put("external_ui_download_detour", TAG_DIRECT)
-                            .put(
-                                "external_ui_download_url",
-                                "https://gh-proxy.com/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
-                            )
-                    )
-            )
+        return JSONArray()
+            .put(inbound)
+            .put(mixedInbound)
+            .put(socksInbound)
+    }
 
-        return config.toString(2)
+    private fun buildLogConfig(): JSONObject {
+        return JSONObject()
+            .put("disabled", false)
+            .put("level", "info")
+            .put("timestamp", true)
+    }
+
+    private fun buildExperimentalConfig(): JSONObject {
+        return JSONObject()
+            .put(
+                "cache_file",
+                JSONObject()
+                    .put("enabled", true)
+            )
+            .put(
+                "clash_api",
+                JSONObject()
+                    .put("default_mode", AppSettingsDefaults.CLASH_MODE)
+                    .put("external_controller", "127.0.0.1:9090")
+                    .put("external_ui", "metacubexd")
+                    .put("external_ui_download_detour", TAG_DIRECT)
+                    .put(
+                        "external_ui_download_url",
+                        "https://gh-proxy.com/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+                    )
+            )
     }
 
     private fun buildServiceOutbounds(nodeTags: List<String>, includeDirect: Boolean): JSONArray {

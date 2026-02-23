@@ -7,7 +7,8 @@ data class AppSettings(
     val tunMtu: Int = AppSettingsDefaults.TUN_MTU,
     val tunAutoRoute: Boolean = AppSettingsDefaults.TUN_AUTO_ROUTE,
     val tunStrictRoute: Boolean = AppSettingsDefaults.TUN_STRICT_ROUTE,
-    val httpProxyEnabled: Boolean = AppSettingsDefaults.HTTP_PROXY_ENABLED
+    val httpProxyEnabled: Boolean = AppSettingsDefaults.HTTP_PROXY_ENABLED,
+    val clashMode: String = AppSettingsDefaults.CLASH_MODE
 )
 
 object AppSettingsDefaults {
@@ -18,4 +19,5 @@ object AppSettingsDefaults {
     const val TUN_AUTO_ROUTE = true
     const val TUN_STRICT_ROUTE = true
     const val HTTP_PROXY_ENABLED = true
+    const val CLASH_MODE = "rule"
 }

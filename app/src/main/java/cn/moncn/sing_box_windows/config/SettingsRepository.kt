@@ -11,6 +11,7 @@ object SettingsRepository {
     private const val KEY_TUN_AUTO_ROUTE = "tun_auto_route"
     private const val KEY_TUN_STRICT_ROUTE = "tun_strict_route"
     private const val KEY_HTTP_PROXY_ENABLED = "http_proxy_enabled"
+    private const val KEY_CLASH_MODE = "clash_mode"
 
     fun load(context: Context): AppSettings {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -31,7 +32,8 @@ object SettingsRepository {
             httpProxyEnabled = prefs.getBoolean(
                 KEY_HTTP_PROXY_ENABLED,
                 AppSettingsDefaults.HTTP_PROXY_ENABLED
-            )
+            ),
+            clashMode = normalizeMode(prefs.getString(KEY_CLASH_MODE, AppSettingsDefaults.CLASH_MODE))
         )
     }
 
@@ -45,6 +47,15 @@ object SettingsRepository {
             .putBoolean(KEY_TUN_AUTO_ROUTE, settings.tunAutoRoute)
             .putBoolean(KEY_TUN_STRICT_ROUTE, settings.tunStrictRoute)
             .putBoolean(KEY_HTTP_PROXY_ENABLED, settings.httpProxyEnabled)
+            .putString(KEY_CLASH_MODE, normalizeMode(settings.clashMode))
             .apply()
+    }
+
+    private fun normalizeMode(mode: String?): String {
+        val normalized = mode?.trim()?.lowercase()
+        return when (normalized) {
+            "rule", "global", "direct" -> normalized
+            else -> AppSettingsDefaults.CLASH_MODE
+        }
     }
 }

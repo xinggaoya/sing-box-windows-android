@@ -23,9 +23,22 @@ android {
         // 由 splits.abi 负责拆分 ABI，避免与 ndk.abiFilters 冲突
     }
 
+    signingConfigs {
+        release {
+            // 固定签名配置：供 CI 自动构建使用（按需求写死，不依赖环境变量）
+            storeFile file("signing/release.jks")
+            storePassword "singbox123456"
+            keyAlias "singbox_release"
+            keyPassword "singbox123456"
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -61,6 +74,8 @@ dependencies {
     implementation files("libs/libbox.aar")
     implementation libs.androidx.core.ktx
     implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.lifecycle.viewmodel.ktx
+    implementation libs.androidx.lifecycle.viewmodel.compose
     implementation libs.androidx.activity.compose
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.ui

@@ -127,6 +127,32 @@ cd singboxwindows
 ./gradlew installDebug
 ```
 
+### GitHub 自动化编译 APK
+
+- 持续构建：`.github/workflows/build-apk.yml`
+  - 触发：`push(main/master/dev/develop)`、`workflow_dispatch`
+  - 输出：已签名 Release APK artifacts（构建前会自动执行 `scripts/update-libbox.sh`）
+- 标签发布：`.github/workflows/release.yml`
+  - 触发：`push tag v*`
+  - 行为：先更新最新内核 AAR，再构建已签名 Release APK 并自动创建 GitHub Release
+
+签名配置已按需求写死（不使用环境变量）：
+
+- Keystore 文件：`app/signing/release.jks`
+- 签名参数：`app/build.gradle` → `android.signingConfigs.release`
+
+### 自动更新 libbox 内核 AAR
+
+```bash
+# 自动拉取 sing-box 最新 Release 并构建 app/libs/libbox.aar
+./scripts/update-libbox.sh
+
+# 构建指定版本
+./scripts/update-libbox.sh --version v1.12.0
+```
+
+详细说明请查看 `docs/LIBBOX_AUTOBUILD.md`。
+
 ### 项目结构
 
 ```
@@ -144,7 +170,13 @@ app/
 
 ### 架构概览
 
-应用采用 **单例 Store + Compose 响应式 UI** 模式：
+应用现已默认切换到 **v2 UDF/MVI 架构**（旧入口代码仅保留用于过渡）：
+
+- **MVI 基座**：统一 `Intent / State / Effect` 数据流
+- **Gateway 分层**：运行时/订阅/节点/设置/诊断能力均通过接口隔离
+- **v2 导航壳层**：首页、订阅、节点、设置、诊断均基于 v2 运行
+
+旧版实现采用 **单例 Store + Compose 响应式 UI** 模式：
 
 - **Store 模式**：使用单例对象 + `mutableStateOf` 进行全局状态管理
 - **Repository 模式**：配置和订阅数据持久化

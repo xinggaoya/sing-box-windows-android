@@ -28,6 +28,10 @@ object ClashModeManager {
     var currentMode by mutableStateOf<ClashMode?>(null)
         private set
 
+    // 用户偏好的模式（未连接时用于预选显示，并在重连后用于恢复）
+    var preferredMode by mutableStateOf<ClashMode>(ClashMode.Rule)
+        private set
+
     // 是否支持模式切换
     var isModeSupported by mutableStateOf(false)
         private set
@@ -55,7 +59,7 @@ object ClashModeManager {
             while (isActive) {
                 if (!ClashApiClient.isConfigured()) {
                     mainHandler.post {
-                        currentMode = null
+                        currentMode = preferredMode
                         isModeSupported = false
                     }
                     delay(3000)
@@ -71,8 +75,17 @@ object ClashModeManager {
         job?.cancel()
         job = null
         mainHandler.post {
-            currentMode = null
+            currentMode = preferredMode
             isModeSupported = false
+        }
+    }
+
+    fun updatePreferredMode(mode: ClashMode) {
+        mainHandler.post {
+            preferredMode = mode
+            if (currentMode == null || !isModeSupported) {
+                currentMode = mode
+            }
         }
     }
 
@@ -88,7 +101,10 @@ object ClashModeManager {
             val body = JSONObject().put("mode", mode.value)
             ClashApiClient.putJson("/configs", body)
             // 立即更新本地状态
-            mainHandler.post { currentMode = mode }
+            mainHandler.post {
+                preferredMode = mode
+                currentMode = mode
+            }
             Unit
         }
     }
@@ -102,9 +118,14 @@ object ClashModeManager {
         if (modeValue.isNotBlank()) {
             val mode = ClashMode.fromValue(modeValue)
             mainHandler.post {
-                currentMode = mode
+                currentMode = mode ?: preferredMode
                 isModeSupported = mode != null
             }
+            return
+        }
+        mainHandler.post {
+            currentMode = preferredMode
+            isModeSupported = false
         }
     }
 }

@@ -127,6 +127,32 @@ cd singboxwindows
 ./gradlew installDebug
 ```
 
+### GitHub Automated APK Build
+
+- Continuous build: `.github/workflows/build-apk.yml`
+  - Trigger: `push(main/master/dev/develop)`, `workflow_dispatch`
+  - Output: signed Release APK artifacts (runs `scripts/update-libbox.sh` before build)
+- Tag release: `.github/workflows/release.yml`
+  - Trigger: `push tag v*`
+  - Behavior: update latest libbox AAR first, then build signed Release APKs and create GitHub Release automatically
+
+Signing is intentionally hardcoded (no environment variables):
+
+- Keystore file: `app/signing/release.jks`
+- Signing params: `app/build.gradle` -> `android.signingConfigs.release`
+
+### Auto Update libbox AAR
+
+```bash
+# Pull latest sing-box release and rebuild app/libs/libbox.aar
+./scripts/update-libbox.sh
+
+# Build a specific version
+./scripts/update-libbox.sh --version v1.12.0
+```
+
+See `docs/LIBBOX_AUTOBUILD.md` for full options and CI workflow details.
+
 ### Project Structure
 
 ```
@@ -144,7 +170,13 @@ app/
 
 ### Architecture Overview
 
-The app follows **Singleton Store + Compose Reactive UI** pattern:
+The app now defaults to a **v2 UDF/MVI architecture** (legacy entry is kept in codebase only for transition):
+
+- **MVI Base**: Unified `Intent / State / Effect` flow
+- **Gateway Layer**: Runtime/Subscription/Nodes/Settings/Diagnostics capabilities are abstracted behind interfaces
+- **V2 Navigation Shell**: Home, Subscription, Nodes, Settings, Diagnostics all run on v2 flow
+
+Legacy implementation follows **Singleton Store + Compose Reactive UI** pattern:
 
 - **Store Pattern**: Global state management using singleton objects with `mutableStateOf`
 - **Repository Pattern**: Configuration and subscription data persistence

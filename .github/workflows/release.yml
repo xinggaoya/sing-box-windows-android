@@ -118,63 +118,36 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 7. 构建 Release APK（所有架构）
+      # 7. 构建前自动拉取并编译最新 libbox AAR
+      - name: Update latest libbox AAR
+        run: |
+          chmod +x scripts/update-libbox.sh
+          SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -n "$SDK_PATH" ]; then
+            ./scripts/update-libbox.sh --android-sdk "$SDK_PATH"
+          else
+            ./scripts/update-libbox.sh
+          fi
+
+      # 8. 构建 Release APK（所有架构）
       - name: Build Release APKs
         run: ./gradlew assembleRelease --stacktrace
 
-      # 8. 签名 APK（需要配置 GitHub Secrets）
-      - name: Sign APKs
-        if: vars.SIGNING_ENABLED == 'true'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      # 9. 校验 APK 签名（Release 构建时由 app/build.gradle 的 signingConfigs 完成签名）
+      - name: Verify APK signatures
         run: |
-          # 调试：检查环境变量
-          echo "KEYSTORE_BASE64 length: ${#KEYSTORE_BASE64}"
-          echo "KEYSTORE_PASSWORD: ${KEYSTORE_PASSWORD:0:3}***"
-          echo "KEY_ALIAS: $KEY_ALIAS"
-
-          # 创建密钥存储（移除可能的空白字符）
-          echo "$KEYSTORE_BASE64" | tr -d ' \n\r' | base64 -d > release.keystore
-
-          # 验证密钥文件是否创建成功
-          if [ ! -s release.keystore ]; then
-            echo "错误: 密钥文件创建失败或为空！"
-            exit 1
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "未找到 apksigner，跳过签名校验"
+            exit 0
           fi
 
-          # 验证密钥文件
-          if ! keytool -list -keystore release.keystore -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
-            echo "错误: 密钥验证失败！"
-            echo "请检查 GitHub Secrets 配置是否正确"
-            exit 1
-          fi
-
-          # 签名各架构 APK
-          echo "开始签名 APK..."
           find app/build/outputs/apk/release -name "*.apk" -print0 | while IFS= read -r -d '' apk; do
-            echo "签名: $apk"
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 \
-              -keystore release.keystore \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -keypass "$KEY_PASSWORD" \
-              "$apk" "$KEY_ALIAS"
-
-            # 使用 zipalign 优化 APK（可选）
-            if command -v zipalign &> /dev/null; then
-              SIGNED_FILE="${apk%.apk}-signed.apk"
-              zipalign -v 4 "$apk" "$SIGNED_FILE"
-              mv "$SIGNED_FILE" "$apk"
-            fi
+            echo "校验签名: $apk"
+            "$APKSIGNER" verify --print-certs "$apk"
           done
 
-          # 清理密钥文件
-          rm -f release.keystore
-          echo "APK 签名完成！"
-
-      # 9. 创建 Release 并上传 APK
+      # 10. 创建 Release 并上传 APK
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -189,7 +162,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 10. 上传构建产物（用于调试）
+      # 11. 上传构建产物（用于调试）
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -197,19 +170,14 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      # 11. 构建摘要
+      # 12. 构建摘要
       - name: Build Summary
         run: |
           echo "## 构建完成 :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**版本**: ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**提交**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ vars.SIGNING_ENABLED }}" = "true" ]; then
-            echo "**签名状态**: :white_check_mark: 已签名" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**签名状态**: :warning: 未签名" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "**签名状态**: :white_check_mark: 已签名（Gradle signingConfigs.release）" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 生成的 APK 文件" >> $GITHUB_STEP_SUMMARY

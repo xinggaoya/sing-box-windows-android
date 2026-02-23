@@ -9,6 +9,7 @@ object ConfigSettingsApplier {
             val root = JSONObject(rawJson)
             applyDns(root, settings)
             applyTunInbound(root, settings)
+            applyClashMode(root, settings)
             root.toString(2)
         }.getOrElse { rawJson }
     }
@@ -38,6 +39,17 @@ object ConfigSettingsApplier {
             }
             httpProxy.put("enabled", settings.httpProxyEnabled)
         }
+    }
+
+    private fun applyClashMode(root: JSONObject, settings: AppSettings) {
+        // 强制把用户选定的模式写入配置，避免重连或订阅刷新后回落到 rule。
+        val experimental = root.optJSONObject("experimental") ?: JSONObject().also {
+            root.put("experimental", it)
+        }
+        val clashApi = experimental.optJSONObject("clash_api") ?: JSONObject().also {
+            experimental.put("clash_api", it)
+        }
+        clashApi.put("default_mode", settings.clashMode)
     }
 
     private fun forEachInbound(inbounds: JSONArray, action: (JSONObject) -> Unit) {

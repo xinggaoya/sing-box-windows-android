@@ -2,53 +2,82 @@ package cn.moncn.sing_box_windows.config
 
 import android.content.Context
 import cn.moncn.sing_box_windows.vpn.VpnDefaults
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 object ConfigRepository {
     private const val FILE_NAME = "singbox.json"
+    private val fileMutex = Mutex()
 
-    fun loadOrCreateConfig(context: Context): String {
-        val file = File(context.filesDir, FILE_NAME)
-        if (!file.exists()) {
-            val defaultJson = ConfigDefaults.defaultConfigJson()
-            file.writeText(defaultJson)
-            return defaultJson
+    suspend fun loadOrCreateConfig(context: Context): String = withContext(Dispatchers.IO) {
+        fileMutex.withLock {
+            val file = File(context.filesDir, FILE_NAME)
+            if (!file.exists()) {
+                val defaultJson = ConfigDefaults.defaultConfigJson()
+                writeAtomically(file, defaultJson)
+                return@withLock defaultJson
+            }
+            val raw = file.readText()
+            val migrated = migrateTunAddress(raw)
+            if (migrated != raw) {
+                writeAtomically(file, migrated)
+            }
+            migrated
         }
-        val raw = file.readText()
-        val migrated = migrateTunAddress(raw)
-        if (migrated != raw) {
-            file.writeText(migrated)
+    }
+
+    suspend fun saveConfig(context: Context, json: String) = withContext(Dispatchers.IO) {
+        fileMutex.withLock {
+            val file = File(context.filesDir, FILE_NAME)
+            val normalized = normalizeConfig(json)
+            writeAtomically(file, normalized)
         }
-        return migrated
     }
 
-    fun saveConfig(context: Context, json: String) {
-        val file = File(context.filesDir, FILE_NAME)
-        val normalized = normalizeConfig(json)
-        file.writeText(normalized)
+    suspend fun saveConfigWithSettings(context: Context, json: String, settings: AppSettings) =
+        withContext(Dispatchers.IO) {
+            fileMutex.withLock {
+                val file = File(context.filesDir, FILE_NAME)
+                val normalized = normalizeConfig(json)
+                val applied = ConfigSettingsApplier.applySettings(normalized, settings)
+                writeAtomically(file, applied)
+            }
+        }
+
+    suspend fun applySettings(context: Context, settings: AppSettings) = withContext(Dispatchers.IO) {
+        fileMutex.withLock {
+            val file = File(context.filesDir, FILE_NAME)
+            val raw = if (file.exists()) file.readText() else ConfigDefaults.defaultConfigJson()
+            val normalized = normalizeConfig(raw)
+            val applied = ConfigSettingsApplier.applySettings(normalized, settings)
+            writeAtomically(file, applied)
+        }
     }
 
-    fun saveConfigWithSettings(context: Context, json: String, settings: AppSettings) {
-        val file = File(context.filesDir, FILE_NAME)
-        val normalized = normalizeConfig(json)
-        val applied = ConfigSettingsApplier.applySettings(normalized, settings)
-        file.writeText(applied)
-    }
-
-    fun applySettings(context: Context, settings: AppSettings) {
-        val file = File(context.filesDir, FILE_NAME)
-        val raw = if (file.exists()) file.readText() else ConfigDefaults.defaultConfigJson()
-        val normalized = normalizeConfig(raw)
-        val applied = ConfigSettingsApplier.applySettings(normalized, settings)
-        file.writeText(applied)
-    }
-
-    fun convertClashAndSave(context: Context, clashYaml: String): ConversionResult {
+    suspend fun convertClashAndSave(context: Context, clashYaml: String): ConversionResult {
         val result = ClashConverter.convert(clashYaml)
         saveConfig(context, result.json)
         return result
+    }
+
+    private fun writeAtomically(file: File, content: String) {
+        val parent = file.parentFile ?: error("invalid file path: ${file.absolutePath}")
+        if (!parent.exists()) {
+            parent.mkdirs()
+        }
+        val tempFile = File(parent, "${file.name}.tmp")
+        tempFile.writeText(content)
+
+        // 同目录重命名，尽量保证配置写入的完整性
+        if (!tempFile.renameTo(file)) {
+            file.writeText(content)
+            tempFile.delete()
+        }
     }
 
     private fun migrateTunAddress(json: String): String {

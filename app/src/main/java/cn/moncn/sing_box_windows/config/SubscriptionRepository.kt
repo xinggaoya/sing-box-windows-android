@@ -3,6 +3,8 @@ package cn.moncn.sing_box_windows.config
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -65,7 +67,11 @@ object SubscriptionRepository {
         return TemplateConfigBuilder.buildFromSubscription(decoded)
     }
 
-    fun load(context: Context): SubscriptionState {
+    suspend fun load(context: Context): SubscriptionState = withContext(Dispatchers.IO) {
+        loadInternal(context)
+    }
+
+    private fun loadInternal(context: Context): SubscriptionState {
         val file = File(context.filesDir, FILE_NAME)
         if (!file.exists()) {
             return SubscriptionState.empty()
@@ -74,135 +80,138 @@ object SubscriptionRepository {
             ?: return SubscriptionState.empty()
         if (parsed.shouldSave) {
             // 兼容旧格式或缺失字段时，回写规范化结果以避免再次丢失显示。
-            runCatching { save(context, parsed.state) }
+            runCatching { saveInternal(context, parsed.state) }
         }
         return parsed.state
     }
 
-    fun add(context: Context, name: String, url: String): SubscriptionAddResult {
-        val state = load(context)
-        val cleanName = name.trim()
-        val cleanUrl = url.trim()
-        val displayName = cleanName.ifBlank { deriveName(cleanUrl, state.items.size + 1) }
-        val newItem = SubscriptionItem(
-            id = UUID.randomUUID().toString(),
-            name = displayName,
-            url = cleanUrl
-        )
-        val newState = SubscriptionState(state.items + newItem, state.selectedId)
-        save(context, newState)
-        return SubscriptionAddResult(newState, newItem)
-    }
-
-    fun importLocal(context: Context, name: String, content: String): SubscriptionUpdateResult {
-        val parsed = buildConfigFromContent(content)
-        if (!parsed.ok || parsed.configJson == null) {
-            return SubscriptionUpdateResult(
-                ok = false,
-                message = parsed.error ?: "节点列表解析失败",
-                warnings = emptyList(),
-                state = load(context)
+    suspend fun add(context: Context, name: String, url: String): SubscriptionAddResult =
+        withContext(Dispatchers.IO) {
+            val state = loadInternal(context)
+            val cleanName = name.trim()
+            val cleanUrl = url.trim()
+            val displayName = cleanName.ifBlank { deriveName(cleanUrl, state.items.size + 1) }
+            val newItem = SubscriptionItem(
+                id = UUID.randomUUID().toString(),
+                name = displayName,
+                url = cleanUrl
             )
+            val newState = SubscriptionState(state.items + newItem, state.selectedId)
+            saveInternal(context, newState)
+            SubscriptionAddResult(newState, newItem)
         }
-        saveConfigWithSettings(context, parsed.configJson)
-        val state = load(context)
-        val cleanName = name.trim()
-        val displayName = cleanName.ifBlank { deriveLocalName(state.items.count { it.isLocal } + 1) }
-        val newItem = SubscriptionItem(
-            id = UUID.randomUUID().toString(),
-            name = displayName,
-            url = LOCAL_URL,
-            lastUpdatedAt = System.currentTimeMillis(),
-            lastError = null,
-            isLocal = true,
-            content = content.trim()
-        )
-        val newState = SubscriptionState(state.items + newItem, newItem.id)
-        save(context, newState)
-        val message = if (parsed.warnings.isNotEmpty()) {
-            "本地节点已应用，但有 ${parsed.warnings.size} 条警告"
-        } else {
-            "本地节点已应用"
-        }
-        return SubscriptionUpdateResult(true, message, parsed.warnings, newState)
-    }
 
-    fun remove(context: Context, id: String): SubscriptionState {
-        val state = load(context)
+    suspend fun importLocal(context: Context, name: String, content: String): SubscriptionUpdateResult =
+        withContext(Dispatchers.IO) {
+            val parsed = buildConfigFromContent(content)
+            if (!parsed.ok || parsed.configJson == null) {
+                return@withContext SubscriptionUpdateResult(
+                    ok = false,
+                    message = parsed.error ?: "节点列表解析失败",
+                    warnings = emptyList(),
+                    state = loadInternal(context)
+                )
+            }
+            saveConfigWithSettings(context, parsed.configJson)
+            val state = loadInternal(context)
+            val cleanName = name.trim()
+            val displayName = cleanName.ifBlank { deriveLocalName(state.items.count { it.isLocal } + 1) }
+            val newItem = SubscriptionItem(
+                id = UUID.randomUUID().toString(),
+                name = displayName,
+                url = LOCAL_URL,
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastError = null,
+                isLocal = true,
+                content = content.trim()
+            )
+            val newState = SubscriptionState(state.items + newItem, newItem.id)
+            saveInternal(context, newState)
+            val message = if (parsed.warnings.isNotEmpty()) {
+                "本地节点已应用，但有 ${parsed.warnings.size} 条警告"
+            } else {
+                "本地节点已应用"
+            }
+            SubscriptionUpdateResult(true, message, parsed.warnings, newState)
+        }
+
+    suspend fun remove(context: Context, id: String): SubscriptionState = withContext(Dispatchers.IO) {
+        val state = loadInternal(context)
         val remaining = state.items.filterNot { it.id == id }
         val nextSelected = state.selectedId?.takeIf { it != id }
         val newState = SubscriptionState(remaining, nextSelected)
-        save(context, newState)
-        return newState
+        saveInternal(context, newState)
+        newState
     }
 
-    fun select(context: Context, id: String): SubscriptionState {
-        val state = load(context)
+    suspend fun select(context: Context, id: String): SubscriptionState = withContext(Dispatchers.IO) {
+        val state = loadInternal(context)
         val newState = SubscriptionState(state.items, id)
-        save(context, newState)
-        return newState
+        saveInternal(context, newState)
+        newState
     }
 
-    fun edit(context: Context, id: String, name: String, url: String): SubscriptionEditResult {
-        val state = load(context)
-        val item = state.items.firstOrNull { it.id == id }
-            ?: return SubscriptionEditResult(
-                ok = false,
-                message = "订阅不存在",
-                state = state
-            )
-        if (item.isLocal) {
+    suspend fun edit(context: Context, id: String, name: String, url: String): SubscriptionEditResult =
+        withContext(Dispatchers.IO) {
+            val state = loadInternal(context)
+            val item = state.items.firstOrNull { it.id == id }
+                ?: return@withContext SubscriptionEditResult(
+                    ok = false,
+                    message = "订阅不存在",
+                    state = state
+                )
+            if (item.isLocal) {
+                val cleanName = name.trim()
+                val displayName = if (cleanName.isBlank()) item.name else cleanName
+                val nameChanged = displayName != item.name
+                val updatedItem = item.copy(name = displayName)
+                val items = state.items.map { if (it.id == id) updatedItem else it }
+                val newState = SubscriptionState(items, state.selectedId)
+                saveInternal(context, newState)
+                return@withContext SubscriptionEditResult(
+                    ok = true,
+                    message = "本地订阅已更新",
+                    state = newState,
+                    item = updatedItem,
+                    urlChanged = false,
+                    nameChanged = nameChanged
+                )
+            }
+            val cleanUrl = url.trim()
+            if (cleanUrl.isBlank()) {
+                return@withContext SubscriptionEditResult(
+                    ok = false,
+                    message = "订阅地址不能为空",
+                    state = state
+                )
+            }
             val cleanName = name.trim()
             val displayName = if (cleanName.isBlank()) item.name else cleanName
+            val urlChanged = cleanUrl != item.url
             val nameChanged = displayName != item.name
-            val updatedItem = item.copy(name = displayName)
+            val updatedItem = item.copy(
+                name = displayName,
+                url = cleanUrl,
+                lastError = if (urlChanged) null else item.lastError,
+                lastUpdatedAt = if (urlChanged) null else item.lastUpdatedAt
+            )
             val items = state.items.map { if (it.id == id) updatedItem else it }
             val newState = SubscriptionState(items, state.selectedId)
-            save(context, newState)
-            return SubscriptionEditResult(
+            saveInternal(context, newState)
+            SubscriptionEditResult(
                 ok = true,
-                message = "本地订阅已更新",
+                message = "订阅信息已保存",
                 state = newState,
                 item = updatedItem,
-                urlChanged = false,
+                urlChanged = urlChanged,
                 nameChanged = nameChanged
             )
         }
-        val cleanUrl = url.trim()
-        if (cleanUrl.isBlank()) {
-            return SubscriptionEditResult(
-                ok = false,
-                message = "订阅地址不能为空",
-                state = state
-            )
-        }
-        val cleanName = name.trim()
-        val displayName = if (cleanName.isBlank()) item.name else cleanName
-        val urlChanged = cleanUrl != item.url
-        val nameChanged = displayName != item.name
-        val updatedItem = item.copy(
-            name = displayName,
-            url = cleanUrl,
-            lastError = if (urlChanged) null else item.lastError,
-            lastUpdatedAt = if (urlChanged) null else item.lastUpdatedAt
-        )
-        val items = state.items.map { if (it.id == id) updatedItem else it }
-        val newState = SubscriptionState(items, state.selectedId)
-        save(context, newState)
-        return SubscriptionEditResult(
-            ok = true,
-            message = "订阅信息已保存",
-            state = newState,
-            item = updatedItem,
-            urlChanged = urlChanged,
-            nameChanged = nameChanged
-        )
-    }
 
-    fun activate(context: Context, id: String): SubscriptionUpdateResult {
-        val state = load(context)
+    suspend fun activate(context: Context, id: String): SubscriptionUpdateResult = withContext(Dispatchers.IO) {
+        val state = loadInternal(context)
         val item = state.items.firstOrNull { it.id == id }
-            ?: return SubscriptionUpdateResult(
+            ?: return@withContext SubscriptionUpdateResult(
                 ok = false,
                 message = "订阅不存在",
                 warnings = emptyList(),
@@ -210,28 +219,28 @@ object SubscriptionRepository {
             )
         val result = updateItem(context, item)
         if (!result.ok) {
-            return result
+            return@withContext result
         }
         // 仅在订阅成功同步后才标记为当前订阅，避免配置不一致。
         val activatedState = SubscriptionState(result.state.items, id)
-        save(context, activatedState)
+        saveInternal(context, activatedState)
         val message = "已启用，${result.message}"
-        return result.copy(message = message, state = activatedState)
+        result.copy(message = message, state = activatedState)
     }
 
-    fun updateSelected(context: Context): SubscriptionUpdateResult {
-        val state = load(context)
+    suspend fun updateSelected(context: Context): SubscriptionUpdateResult = withContext(Dispatchers.IO) {
+        val state = loadInternal(context)
         val selected = state.selected()
-            ?: return SubscriptionUpdateResult(
+            ?: return@withContext SubscriptionUpdateResult(
                 ok = false,
                 message = "请先启用订阅",
                 warnings = emptyList(),
                 state = state
             )
-        return updateItem(context, selected)
+        updateItem(context, selected)
     }
 
-    private fun updateItem(context: Context, item: SubscriptionItem): SubscriptionUpdateResult {
+    private suspend fun updateItem(context: Context, item: SubscriptionItem): SubscriptionUpdateResult {
         return try {
             if (item.isLocal) {
                 val content = item.content?.takeIf { it.isNotBlank() }
@@ -282,14 +291,14 @@ object SubscriptionRepository {
     }
 
     private fun replaceItem(context: Context, item: SubscriptionItem): SubscriptionState {
-        val state = load(context)
+        val state = loadInternal(context)
         val items = state.items.map { if (it.id == item.id) item else it }
         val newState = SubscriptionState(items, state.selectedId)
-        save(context, newState)
+        saveInternal(context, newState)
         return newState
     }
 
-    private fun save(context: Context, state: SubscriptionState) {
+    private fun saveInternal(context: Context, state: SubscriptionState) {
         val file = File(context.filesDir, FILE_NAME)
         val root = JSONObject()
         root.put("selectedId", state.selectedId ?: "")
@@ -363,7 +372,7 @@ object SubscriptionRepository {
         return ParsedItems(items, changed)
     }
 
-    private fun saveConfigWithSettings(context: Context, json: String) {
+    private suspend fun saveConfigWithSettings(context: Context, json: String) {
         val settings = SettingsRepository.load(context)
         ConfigRepository.saveConfigWithSettings(context, json, settings)
     }
@@ -384,20 +393,24 @@ object SubscriptionRepository {
         connection.readTimeout = 15_000
         connection.requestMethod = "GET"
         connection.setRequestProperty("User-Agent", "SingBoxMobile/1.0")
-        val code = connection.responseCode
-        val stream = if (code in 200..299) {
-            connection.inputStream
-        } else {
-            connection.errorStream
+        try {
+            val code = connection.responseCode
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                throw IOException("订阅请求失败: HTTP $code")
+            }
+            if (body.isBlank()) {
+                throw IOException("订阅内容为空")
+            }
+            return decodeSubscriptionBody(body)
+        } finally {
+            connection.disconnect()
         }
-        val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) {
-            throw IOException("订阅请求失败: HTTP $code")
-        }
-        if (body.isBlank()) {
-            throw IOException("订阅内容为空")
-        }
-        return decodeSubscriptionBody(body)
     }
 
     private fun decodeIfBase64(raw: String): String {

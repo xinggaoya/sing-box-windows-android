@@ -16,17 +16,12 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import androidx.core.app.NotificationCompat
-import cn.moncn.sing_box_windows.MainActivity
 import cn.moncn.sing_box_windows.R
-import cn.moncn.sing_box_windows.config.ConfigSettingsApplier
-import cn.moncn.sing_box_windows.config.ConfigRepository
-import cn.moncn.sing_box_windows.config.AppSettingsDefaults
-import cn.moncn.sing_box_windows.config.ClashApiDefaults
-import cn.moncn.sing_box_windows.config.SettingsRepository
 import cn.moncn.sing_box_windows.core.CoreStartResult
-import cn.moncn.sing_box_windows.core.ClashApiClient
+import cn.moncn.sing_box_windows.core.CoreRuntimeCoordinator
 import cn.moncn.sing_box_windows.core.LibboxManager
 import cn.moncn.sing_box_windows.core.SingBoxEngine
+import cn.moncn.sing_box_windows.v2.RefactorMainActivity
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import io.nekohasekai.libbox.RoutePrefixIterator
 import io.nekohasekai.libbox.TunOptions
@@ -89,15 +84,10 @@ class AppVpnService : android.net.VpnService() {
 
         // 首次启动可能伴随规则下载，放到后台避免阻塞 UI。
         serviceScope.launch {
-            val result = runCatching {
-                val rawConfig = ConfigRepository.loadOrCreateConfig(this@AppVpnService)
-                val settings = SettingsRepository.load(this@AppVpnService)
-                // 默认启用 Clash API 用于节点管理
-                ClashApiClient.configure(ClashApiDefaults.ADDRESS, ClashApiDefaults.SECRET)
-                val appliedConfig = ConfigSettingsApplier.applySettings(rawConfig, settings)
-                ConfigRepository.saveConfig(this@AppVpnService, appliedConfig)
+            val result = try {
+                val appliedConfig = CoreRuntimeCoordinator.prepareRuntimeConfig(this@AppVpnService)
                 SingBoxEngine.start(appliedConfig, platform)
-            }.getOrElse { error ->
+            } catch (error: Exception) {
                 CoreStartResult(
                     ok = false,
                     error = error.message ?: "core start failed"
@@ -130,7 +120,7 @@ class AppVpnService : android.net.VpnService() {
 
     private fun buildNotification(status: String): Notification {
         val channelId = ensureChannel()
-        val intent = Intent(this, MainActivity::class.java)
+        val intent = Intent(this, RefactorMainActivity::class.java)
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         } else {
