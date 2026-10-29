@@ -119,7 +119,8 @@ You can also import local node lists:
 ### Build Steps
 
 ```bash
-# Clone repository
+# Clone repository (libbox.aar is stored via Git LFS, so install the LFS client first)
+git lfs install
 git clone https://github.com/xinggaoya/sing-box-windows-android.git
 cd singboxwindows
 
@@ -151,6 +152,10 @@ Signing is intentionally hardcoded (no environment variables):
 - Details: `docs/IN_APP_UPDATE.md`
 
 ### Auto Update libbox AAR
+
+> `app/libs/libbox.aar` is tracked with **Git LFS** (the sing-box 1.14.4 binary is
+> ~114 MB, above GitHub's 100 MB per-file limit). Run `git lfs install` once before
+> cloning. The release workflow rebuilds it from source and skips the LFS download.
 
 ```bash
 # Pull latest sing-box release and rebuild app/libs/libbox.aar

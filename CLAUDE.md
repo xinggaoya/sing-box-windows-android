@@ -113,6 +113,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **配置中不再写入 `experimental.clash_api`**，因此应用不会在 `127.0.0.1:9090`
 > 开启 HTTP / WebSocket 监听；代理模式改为连接建立后通过 `setClashMode` 下发。
 
+## Git LFS
+
+`app/libs/libbox.aar`（sing-box 1.14.4 内核，约 114 MB）超过 GitHub 单文件 100 MB 限制，
+因此通过 **Git LFS** 存储（见 `.gitattributes`）。
+
+- 克隆前需执行一次 `git lfs install`
+- `release.yml` 会从源码重新编译内核，因此 checkout 设置 `lfs: false` 以节省带宽
+- `ci.yml` 需要真实 AAR 才能编译，保持 `lfs: true`
+- 修改 AAR 后用 `git add --renormalize app/libs/libbox.aar` 生成指针
+
 ## 重要约定
 
 ### 1. 状态管理模式

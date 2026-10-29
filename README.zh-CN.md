@@ -116,7 +116,8 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 ### 构建步骤
 
 ```bash
-# 克隆仓库
+# 克隆仓库（libbox.aar 使用 Git LFS 存储，请先安装 LFS 客户端）
+git lfs install
 git clone https://github.com/xinggaoya/sing-box-windows-android.git
 cd singboxwindows
 

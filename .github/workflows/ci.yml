@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 编译需要真实的 libbox.aar（Git LFS 存储），必须拉取 LFS 对象
+          lfs: true
 
       - name: Set up JDK
         uses: actions/setup-java@v4

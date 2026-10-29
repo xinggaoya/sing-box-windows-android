@@ -38,6 +38,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # 下面的步骤会从源码重新编译 libbox.aar，无需拉取 LFS 对象（约 120MB）
+          lfs: false
 
       # 2. 获取版本信息
       - name: Get version info
