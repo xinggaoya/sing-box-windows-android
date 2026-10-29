@@ -189,7 +189,14 @@ cleanup() {
 
 clone_sing_box() {
     SING_BOX_DIR="${WORKDIR}/sing-box"
-    if git clone --depth 1 --branch "$RESOLVED_REF" "$SING_BOX_REPO" "$SING_BOX_DIR" >/dev/null 2>&1; then
+    if [[ -d "$SING_BOX_DIR/.git" ]]; then
+        # 复用已有检出的工作区，保证脚本可重复执行（幂等）。
+        log "复用已有源码目录: $SING_BOX_DIR"
+        git -C "$SING_BOX_DIR" fetch --depth 1 origin "$RESOLVED_REF" >/dev/null 2>&1 ||
+            git -C "$SING_BOX_DIR" fetch --depth 1 origin >/dev/null 2>&1 || true
+        git -C "$SING_BOX_DIR" checkout -q FETCH_HEAD 2>/dev/null ||
+            git -C "$SING_BOX_DIR" checkout -q "$RESOLVED_REF" 2>/dev/null || true
+    elif git clone --depth 1 --branch "$RESOLVED_REF" "$SING_BOX_REPO" "$SING_BOX_DIR" >/dev/null 2>&1; then
         :
     else
         git clone --depth 1 "$SING_BOX_REPO" "$SING_BOX_DIR" >/dev/null 2>&1
@@ -223,6 +230,7 @@ clone_sing_box() {
 
 setup_java() {
     if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]] && java_is_openjdk17 "${JAVA_HOME}/bin/java"; then
+        export JAVA_HOME
         log "使用系统 JAVA_HOME: ${JAVA_HOME} (${JAVA_VERSION_LINE})"
         return
     fi
@@ -287,6 +295,17 @@ setup_go() {
         fi
     fi
 
+    # 版本管理器（mise / asdf / goenv）的 go 往往是一个 shim：它会重写子进程环境
+    # （典型是覆盖 JAVA_HOME），导致上游 cmd/internal/build_libbox 的 OpenJDK 17 校验失败。
+    # 这里解析出真实的 GOROOT 并前置到 PATH，使后续 go 调用绕过 shim。
+    local resolved_goroot
+    resolved_goroot="$(go env GOROOT 2>/dev/null || true)"
+    if [[ -n "$resolved_goroot" && -x "${resolved_goroot}/bin/go" ]]; then
+        export GOROOT="$resolved_goroot"
+        export PATH="${GOROOT}/bin:${PATH}"
+        log "使用真实 Go 安装目录: ${GOROOT}"
+    fi
+
     if [[ "$system_go_ok" -eq 0 ]]; then
         local host_os host_arch
         host_os="$(detect_host_os)"
@@ -313,9 +332,16 @@ setup_go() {
     export GOPATH="${WORKDIR}/gopath"
     export GOCACHE="${WORKDIR}/gocache"
     export GOMODCACHE="${WORKDIR}/gomodcache"
+    # Go 的临时编译目录默认落在系统 TMPDIR（部分环境是容量很小的 tmpfs），
+    # sing-box 多 ABI 编译需要数 GB 空间，这里统一收敛到工作目录。
+    export GOTMPDIR="${WORKDIR}/gotmp"
     export GOTOOLCHAIN=local
-    mkdir -p "$GOPATH" "$GOCACHE" "$GOMODCACHE"
-    export PATH="${GOPATH}/bin:${PATH}"
+    # 上游 cmd/internal/build_libbox 通过 build.Default.GOPATH/bin 定位 gomobile/gobind。
+    # 若宿主机设置了 GOBIN（如 mise / asdf 的 Go 安装），`go install` 会装到 GOBIN 而非
+    # $GOPATH/bin，导致构建报 "missing gomobile installation"。此处显式绑定 GOBIN 规避。
+    export GOBIN="${GOPATH}/bin"
+    mkdir -p "$GOPATH" "$GOCACHE" "$GOMODCACHE" "$GOBIN" "$GOTMPDIR"
+    export PATH="${GOBIN}:${PATH}"
 }
 
 find_sdkmanager() {

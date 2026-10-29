@@ -37,7 +37,7 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 
 ### 最新版本
 
-- [📥 v1.1.0 正式版](https://github.com/xinggaoya/sing-box-windows-android/releases/tag/v1.1.0)
+- [📥 最新正式版](https://github.com/xinggaoya/sing-box-windows-android/releases/latest)
 
 ### 架构选择
 
@@ -92,15 +92,18 @@ Sing Box Windows Android 是一个基于 sing-box 核心的现代化 Android VPN
 
 ## 🛠️ 技术规格
 
-| 项目         | 规格                         |
-| ------------ | ---------------------------- |
-| **开发语言** | Kotlin                       |
-| **UI 框架**  | Jetpack Compose + Material 3 |
-| **核心库**   | libbox (sing-box)            |
-| **最低 SDK** | API 29 (Android 10)          |
-| **目标 SDK** | API 36 (Android 15)          |
-| **构建工具** | Gradle with Kotlin DSL       |
-| **支持协议** | VLESS, Shadowsocks 等        |
+| 项目         | 规格                                         |
+| ------------ | -------------------------------------------- |
+| **开发语言** | Kotlin 2.2.21                                |
+| **UI 框架**  | Jetpack Compose (BOM 2026.06.01) + Material 3 |
+| **核心库**   | libbox (sing-box **v1.14.4**)                |
+| **内核接口** | libbox `CommandServer` / `CommandClient`（官方 daemon gRPC） |
+| **设计系统** | Indigo 设计令牌（与桌面端对齐）              |
+| **最低 SDK** | API 29 (Android 10)                          |
+| **目标 SDK** | API 36 (Android 15)                          |
+| **Java**     | 17                                           |
+| **构建工具** | Gradle 8.13 + AGP 8.13.2                    |
+| **支持协议** | VLESS, Shadowsocks 等                        |
 
 ## 🔧 开发构建
 
@@ -162,30 +165,35 @@ cd singboxwindows
 app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
-│   │   ├── config/          # 配置管理
-│   │   ├── core/            # 核心功能 (Clash API, 状态, 诊断)
-│   │   ├── ui/              # 用户界面 (屏幕, 组件, 主题)
-│   │   └── vpn/             # VPN 服务
+│   │   ├── ui/              # 设计系统 (主题令牌, 通用组件, 格式化工具)
+│   │   ├── update/          # 应用内更新模块
+│   │   ├── vpn/             # VpnService 与 libbox 平台桥接
+│   │   └── v2/              # 主线 (Clean Architecture + MVI)
+│   │       ├── app/         # 导航壳层与路由表
+│   │       ├── core/        # MVI 基座、依赖装配
+│   │       ├── domain/      # 接口与领域模型 (不含 Android/libbox 类型)
+│   │       ├── data/        # 实现层 (内核命令层, 配置, 仓储)
+│   │       └── feature/     # home / proxy / connections / logs / outbounds / subscription / settings
 │   ├── res/                 # 资源文件
-│   └── libs/                # 本地依赖库 (libbox.aar)
+│   └── libs/                # 本地依赖库 (libbox.aar + libbox.version.json)
 └── build.gradle             # 模块构建配置
 ```
 
 ### 架构概览
 
-应用现已默认切换到 **v2 UDF/MVI 架构**（旧入口代码仅保留用于过渡）：
+应用采用 **Clean Architecture + MVI** 结构：
 
-- **MVI 基座**：统一 `Intent / State / Effect` 数据流
-- **Gateway 分层**：运行时/订阅/节点/设置/诊断能力均通过接口隔离
-- **v2 导航壳层**：首页、订阅、节点、设置、诊断均基于 v2 运行
+- **领域层**（`v2/domain`）：只定义能力接口与领域模型，不含任何 Android / libbox 类型
+- **数据层**（`v2/data`）：全部实现，包含内核命令层
+- **功能层**（`v2/feature`）：页面 + MVI ViewModel，仅依赖领域接口
+- **MVI 基座**：统一 `Intent / State / Effect` 数据流，Intent 串行消费以消除竞态
 
-旧版实现采用 **单例 Store + Compose 响应式 UI** 模式：
+**内核接入**已从 Clash API（HTTP + WebSocket 轮询）迁移到 libbox 自带的
+`CommandServer` / `CommandClient`（sing-box 官方 daemon gRPC 服务），
+与桌面端 `sing-box-windows` 的迁移方向一致。
+流量、代理组、出站、连接与日志全部由内核**主动推送**，无需任何轮询。
 
-- **Store 模式**：使用单例对象 + `mutableStateOf` 进行全局状态管理
-- **Repository 模式**：配置和订阅数据持久化
-- **Manager 模式**：核心功能协调 (OutboundGroupManager, CoreStatusManager)
-
-详细架构文档请参阅 [CLAUDE.md](CLAUDE.md)。
+详细架构文档请参阅 [docs/ARCHITECTURE_V3.md](docs/ARCHITECTURE_V3.md)。
 
 ## 🤝 贡献指南
 
@@ -211,11 +219,11 @@ app/
 
 ### 最近更新
 
-**v1.1.0** (2025-12-23)
-- Clash API 深度集成，实时流量统计
-- 支持导入本地节点列表
-- 重构导航架构，底部导航栏设计
-- 增强设置功能，配置自动保存
+**v1.3.0** (2026-10-29)
+- 内核升级至 sing-box **v1.14.4**
+- 内核接口从 Clash API 迁移到 libbox 原生 `CommandServer` / `CommandClient`
+- 新增连接 / 日志 / 出站页面，移植桌面端 Indigo 设计系统
+- Release APK 经 R8 裁剪，体积从 136.7 MB 降至 78.5 MB
 
 ## 🐛 问题反馈
 

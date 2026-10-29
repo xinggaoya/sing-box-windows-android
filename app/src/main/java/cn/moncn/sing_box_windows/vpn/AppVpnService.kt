@@ -17,10 +17,12 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import androidx.core.app.NotificationCompat
 import cn.moncn.sing_box_windows.R
-import cn.moncn.sing_box_windows.core.CoreStartResult
-import cn.moncn.sing_box_windows.core.CoreRuntimeCoordinator
-import cn.moncn.sing_box_windows.core.LibboxManager
-import cn.moncn.sing_box_windows.core.SingBoxEngine
+import cn.moncn.sing_box_windows.v2.data.core.CoreCommandBridge
+import cn.moncn.sing_box_windows.v2.data.core.CoreRuntimeCoordinator
+import cn.moncn.sing_box_windows.v2.data.core.CoreServerCallbacks
+import cn.moncn.sing_box_windows.v2.data.core.CoreStartResult
+import cn.moncn.sing_box_windows.v2.data.core.LibboxBootstrap
+import cn.moncn.sing_box_windows.v2.data.core.SingBoxEngine
 import cn.moncn.sing_box_windows.v2.RefactorMainActivity
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import io.nekohasekai.libbox.RoutePrefixIterator
@@ -30,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AppVpnService : android.net.VpnService() {
@@ -46,7 +49,7 @@ class AppVpnService : android.net.VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        LibboxManager.initialize(this)
+        LibboxBootstrap.initialize(this)
         DefaultNetworkMonitor.initialize(this)
     }
 
@@ -64,7 +67,7 @@ class AppVpnService : android.net.VpnService() {
     }
 
     private fun startTunnel() {
-        if (vpnInterface != null || SingBoxEngine.isRunning() || isStarting.get()) {
+        if (vpnInterface != null || SingBoxEngine.isRunning || isStarting.get()) {
             return
         }
         if (!isStarting.compareAndSet(false, true)) {
@@ -86,7 +89,7 @@ class AppVpnService : android.net.VpnService() {
         serviceScope.launch {
             val result = try {
                 val appliedConfig = CoreRuntimeCoordinator.prepareRuntimeConfig(this@AppVpnService)
-                SingBoxEngine.start(appliedConfig, platform)
+                SingBoxEngine.start(appliedConfig, platform, serverCallbacks)
             } catch (error: Exception) {
                 CoreStartResult(
                     ok = false,
@@ -108,6 +111,8 @@ class AppVpnService : android.net.VpnService() {
 
     private fun stopTunnel(resetState: Boolean = true) {
         isStarting.set(false)
+        // 先断开内核命令通道，再关闭内核与 TUN
+        serviceScope.launch { CoreCommandBridge.disconnect() }
         SingBoxEngine.stop()
         vpnInterface?.close()
         vpnInterface = null
@@ -116,6 +121,25 @@ class AppVpnService : android.net.VpnService() {
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /**
+     * 内核命令服务回调。
+     *
+     * 内核侧发起「停止服务 / 重载配置」时，通过该桥接回到应用层执行。
+     */
+    private val serverCallbacks = object : CoreServerCallbacks {
+        override fun onStopRequested() {
+            mainHandler.post { stopTunnel() }
+        }
+
+        override fun onReloadRequested(): String? {
+            return runCatching {
+                runBlocking(Dispatchers.IO) {
+                    CoreRuntimeCoordinator.prepareRuntimeConfig(this@AppVpnService)
+                }
+            }.getOrNull()
+        }
     }
 
     private fun buildNotification(status: String): Notification {
@@ -171,7 +195,11 @@ class AppVpnService : android.net.VpnService() {
             builder.addAddress(VpnDefaults.ADDRESS, VpnDefaults.PREFIX)
         }
 
-        val dnsAddress = runCatching { options.dnsServerAddress?.value }.getOrNull()
+        // sing-box 1.14 起 TunOptions.dnsServerAddress 为字符串迭代器
+        val dnsAddress = runCatching {
+            val iterator = options.getDNSServerAddress()
+            if (iterator.hasNext()) iterator.next() else null
+        }.getOrNull()
         if (!dnsAddress.isNullOrBlank()) {
             builder.addDnsServer(dnsAddress)
         } else {
@@ -203,6 +231,11 @@ class AppVpnService : android.net.VpnService() {
 
     fun notifyCoreNotification(notification: LibboxNotification) {
         Log.i("Libbox", "notification: ${notification.title} ${notification.body}")
+    }
+
+    /** 取消内核下发的通知（Android 端目前不落地内核通知，仅记录） */
+    fun cancelCoreNotification(identifier: String, typeID: Int) {
+        Log.i("Libbox", "cancel notification: $identifier (type=$typeID)")
     }
 
     private fun addAddresses(builder: Builder, iterator: RoutePrefixIterator): Int {

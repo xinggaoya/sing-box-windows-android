@@ -1,21 +1,20 @@
 package cn.moncn.sing_box_windows.v2.data.nodes
 
-import androidx.compose.runtime.snapshotFlow
-import cn.moncn.sing_box_windows.core.OutboundGroupManager
-import cn.moncn.sing_box_windows.core.OutboundGroupModel
+import cn.moncn.sing_box_windows.v2.data.core.CoreCommandBridge
+import cn.moncn.sing_box_windows.v2.domain.core.OutboundGroup
 import cn.moncn.sing_box_windows.v2.domain.nodes.NodesGateway
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.distinctUntilChanged
 
+/**
+ * 节点网关实现：委托内核命令通道。
+ */
 class DefaultNodesGateway : NodesGateway {
-    override val groupsFlow: Flow<List<OutboundGroupModel>> = snapshotFlow { OutboundGroupManager.groups }
-        .distinctUntilChanged()
 
-    override suspend fun select(groupTag: String, outboundTag: String) {
-        OutboundGroupManager.select(groupTag, outboundTag)
-    }
+    override val groupsFlow: Flow<List<OutboundGroup>> = CoreCommandBridge.gateway.groupsFlow
 
-    override suspend fun test(outboundTag: String): Result<Unit> {
-        return OutboundGroupManager.urlTest(outboundTag)
-    }
+    override suspend fun select(groupTag: String, outboundTag: String): Result<Unit> =
+        CoreCommandBridge.gateway.selectOutbound(groupTag, outboundTag)
+
+    override suspend fun test(outboundTag: String): Result<Unit> =
+        CoreCommandBridge.gateway.urlTest(outboundTag)
 }

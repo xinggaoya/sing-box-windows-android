@@ -1,10 +1,10 @@
 package cn.moncn.sing_box_windows.v2.data.subscription
 
 import android.content.Context
-import cn.moncn.sing_box_windows.config.SubscriptionEditResult
-import cn.moncn.sing_box_windows.config.SubscriptionRepository
-import cn.moncn.sing_box_windows.config.SubscriptionState
-import cn.moncn.sing_box_windows.config.SubscriptionUpdateResult
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionEditResult
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionRepository
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionState
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionUpdateResult
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionGateway
 
 class DefaultSubscriptionGateway(

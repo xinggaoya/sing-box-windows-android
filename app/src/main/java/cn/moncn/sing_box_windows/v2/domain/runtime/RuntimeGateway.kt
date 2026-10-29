@@ -1,7 +1,7 @@
 package cn.moncn.sing_box_windows.v2.domain.runtime
 
-import cn.moncn.sing_box_windows.core.CoreStatus
-import cn.moncn.sing_box_windows.core.ClashModeManager
+import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
+import cn.moncn.sing_box_windows.v2.domain.core.CoreStatus
 import cn.moncn.sing_box_windows.vpn.VpnState
 import kotlinx.coroutines.flow.Flow
 
@@ -12,10 +12,10 @@ interface RuntimeGateway {
     val vpnStateFlow: Flow<VpnState>
     val vpnErrorFlow: Flow<String?>
     val coreStatusFlow: Flow<CoreStatus?>
-    val modeFlow: Flow<ClashModeManager.ClashMode?>
+    val modeFlow: Flow<CoreClashMode?>
     val modeSupportedFlow: Flow<Boolean>
 
     suspend fun startVpn()
     suspend fun stopVpn()
-    suspend fun switchMode(mode: ClashModeManager.ClashMode): Result<Unit>
+    suspend fun switchMode(mode: CoreClashMode): Result<Unit>
 }

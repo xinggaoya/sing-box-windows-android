@@ -5,192 +5,155 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
 import cn.moncn.sing_box_windows.R
 
-// ==================== 字体家族 ====================
-
-// Space Grotesk 字体家族
+/**
+ * 品牌展示字体：Space Grotesk（与桌面端的 `Inter` 承担同等的标题职责）。
+ * 仅用于 display / headline / title，正文使用系统默认无衬线字体以保证小字号可读性。
+ */
 val SpaceGrotesk = FontFamily(
     Font(R.font.space_grotesk, FontWeight.Normal),
     Font(R.font.space_grotesk, FontWeight.Medium),
-    Font(R.font.space_grotesk, FontWeight.SemiBold)
+    Font(R.font.space_grotesk, FontWeight.SemiBold),
+    Font(R.font.space_grotesk, FontWeight.Bold)
 )
 
-// ==================== 排版系统 ====================
+/** 等宽字体，用于日志、命令行、配置片段 */
+val MonoFont = FontFamily.Monospace
+
+private val Default = FontFamily.Default
+
+private val TightLineHeight = LineHeightStyle(
+    alignment = LineHeightStyle.Alignment.Center,
+    trim = LineHeightStyle.Trim.None
+)
 
 /**
- * 现代化排版系统
- * 遵循 Material 3 Design 的类型尺度
+ * 排版令牌，对齐桌面端 `tokens.css` 的 `--text-*` 阶梯：
+ * xs 12 / sm 13 / base 14 / md 15 / lg 17 / xl 20 / 2xl 24 / 3xl 30。
  */
-val Typography = Typography(
-    // ==================== 显示字体 ====================
+object AppTextSize {
+    val xs = 12.sp
+    val sm = 13.sp
+    val base = 14.sp
+    val md = 15.sp
+    val lg = 17.sp
+    val xl = 20.sp
+    val x2l = 24.sp
+    val x3l = 30.sp
+}
 
-    /**
-     * 大型显示文本 - 用于首页头条
-     * 最大、最醒目的文字
-     */
+val IndigoTypography = Typography(
+    // ---------------- Display ----------------
     displayLarge = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 57.sp,
-        lineHeight = 64.sp,
-        letterSpacing = (-0.25).sp
+        fontSize = AppTextSize.x3l,
+        lineHeight = 38.sp,
+        letterSpacing = (-0.4).sp
     ),
-
     displayMedium = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 45.sp,
-        lineHeight = 52.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.x2l,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.2).sp
     ),
-
     displaySmall = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 36.sp,
-        lineHeight = 44.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.xl,
+        lineHeight = 28.sp
     ),
 
-    // ==================== 标题字体 ====================
-
-    /**
-     * 大标题 - 页面主标题
-     */
+    // ---------------- Headline ----------------
     headlineLarge = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.xl,
+        lineHeight = 28.sp
     ),
-
-    /**
-     * 中标题 - 页面副标题
-     */
     headlineMedium = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.lg,
+        lineHeight = 24.sp
     ),
-
-    /**
-     * 小标题 - 区块标题
-     */
     headlineSmall = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.Medium,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.md,
+        lineHeight = 22.sp
     ),
 
-    // ==================== 标题字体 ====================
-
-    /**
-     * 大标题 - 卡片或区块标题
-     */
+    // ---------------- Title ----------------
     titleLarge = TextStyle(
         fontFamily = SpaceGrotesk,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
+        fontSize = AppTextSize.lg,
+        lineHeight = 24.sp
     ),
-
-    /**
-     * 中标题 - 列表项标题
-     */
     titleMedium = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        fontSize = AppTextSize.md,
+        lineHeight = 21.sp
     ),
-
-    /**
-     * 小标题 - 小型列表项标题
-     */
     titleSmall = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        fontSize = AppTextSize.base,
+        lineHeight = 20.sp
     ),
 
-    // ==================== 正文字体 ====================
-
-    /**
-     * 大正文 - 主要内容
-     */
+    // ---------------- Body ----------------
     bodyLarge = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        fontSize = AppTextSize.md,
+        lineHeight = 22.sp
     ),
-
-    /**
-     * 中正文 - 常规内容
-     */
     bodyMedium = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        fontSize = AppTextSize.base,
+        lineHeight = 20.sp
     ),
-
-    /**
-     * 小正文 - 次要内容
-     */
     bodySmall = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        fontSize = AppTextSize.sm,
+        lineHeight = 18.sp
     ),
 
-    // ==================== 标签字体 ====================
-
-    /**
-     * 大标签 - 按钮文字
-     */
+    // ---------------- Label ----------------
     labelLarge = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        fontSize = AppTextSize.base,
+        lineHeight = 18.sp
     ),
-
-    /**
-     * 中标签 - 小按钮、标签
-     */
     labelMedium = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontSize = AppTextSize.sm,
+        lineHeight = 16.sp
     ),
-
-    /**
-     * 小标签 - 小型标签
-     */
     labelSmall = TextStyle(
-        fontFamily = SpaceGrotesk,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontFamily = Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = AppTextSize.xs,
+        lineHeight = 14.sp
     )
+)
+
+/** 日志 / 配置片段使用的等宽样式 */
+val MonoTextStyle = TextStyle(
+    fontFamily = MonoFont,
+    fontWeight = FontWeight.Normal,
+    fontSize = AppTextSize.sm,
+    lineHeight = 18.sp,
+    lineHeightStyle = TightLineHeight
 )

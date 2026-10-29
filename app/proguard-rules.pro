@@ -1,21 +1,33 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ==================== libbox (gomobile) ====================
+# gomobile 生成的 Java 绑定通过反射调用 Go 方法，必须完整保留。
+-keep class io.nekohasekai.libbox.** { *; }
+-keep class go.** { *; }
+-keep class go.Seq$Proxy { *; }
+-dontwarn io.nekohasekai.libbox.**
+-dontwarn go.**
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ==================== kotlinx.serialization ====================
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+-keepclassmembers class cn.moncn.sing_box_windows.** {
+    *** Companion;
+}
+-keepclasseswithmembers class cn.moncn.sing_box_windows.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep,includedescriptorclasses class cn.moncn.sing_box_windows.**$$serializer { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ==================== SnakeYAML ====================
+# SnakeYAML 通过反射构造对象。
+-keep class org.yaml.snakeyaml.** { *; }
+-dontwarn org.yaml.snakeyaml.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ==================== OkHttp / Okio ====================
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+
+# ==================== Compose ====================
+-dontwarn androidx.compose.**

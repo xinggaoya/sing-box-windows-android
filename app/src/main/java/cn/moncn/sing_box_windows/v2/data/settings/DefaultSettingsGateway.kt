@@ -1,9 +1,9 @@
 package cn.moncn.sing_box_windows.v2.data.settings
 
 import android.content.Context
-import cn.moncn.sing_box_windows.config.AppSettings
-import cn.moncn.sing_box_windows.config.ConfigRepository
-import cn.moncn.sing_box_windows.config.SettingsRepository
+import cn.moncn.sing_box_windows.v2.data.config.AppSettings
+import cn.moncn.sing_box_windows.v2.data.config.ConfigRepository
+import cn.moncn.sing_box_windows.v2.data.config.SettingsRepository
 import cn.moncn.sing_box_windows.update.GitHubRelease
 import cn.moncn.sing_box_windows.update.UpdateManager
 import cn.moncn.sing_box_windows.update.UpdateState

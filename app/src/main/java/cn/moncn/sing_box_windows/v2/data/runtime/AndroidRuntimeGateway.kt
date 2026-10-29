@@ -2,35 +2,38 @@ package cn.moncn.sing_box_windows.v2.data.runtime
 
 import android.content.Context
 import androidx.compose.runtime.snapshotFlow
-import cn.moncn.sing_box_windows.config.ConfigRepository
-import cn.moncn.sing_box_windows.config.SettingsRepository
-import cn.moncn.sing_box_windows.core.ClashApiClient
-import cn.moncn.sing_box_windows.core.ClashModeManager
-import cn.moncn.sing_box_windows.core.CoreRuntimeCoordinator
-import cn.moncn.sing_box_windows.core.CoreStatus
-import cn.moncn.sing_box_windows.core.CoreStatusStore
+import cn.moncn.sing_box_windows.v2.data.config.ConfigRepository
+import cn.moncn.sing_box_windows.v2.data.config.SettingsRepository
+import cn.moncn.sing_box_windows.v2.data.core.CoreCommandBridge
+import cn.moncn.sing_box_windows.v2.data.core.CoreRuntimeCoordinator
+import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
+import cn.moncn.sing_box_windows.v2.domain.core.CoreStatus
 import cn.moncn.sing_box_windows.v2.domain.runtime.RuntimeGateway
 import cn.moncn.sing_box_windows.vpn.VpnController
 import cn.moncn.sing_box_windows.vpn.VpnState
 import cn.moncn.sing_box_windows.vpn.VpnStateStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 复用现有运行时组件，先完成 v2 的首条样板链路。
- * 后续可把这里替换为真正的数据层实现，不影响上层页面。
+ * 运行时网关实现。
+ *
+ * VPN 生命周期沿用系统 `VpnService`；
+ * 内核状态、代理模式等全部来自内核命令通道（事件推送），不再轮询 Clash API。
  */
 class AndroidRuntimeGateway(
     context: Context
 ) : RuntimeGateway {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val coreGateway = CoreCommandBridge.gateway
 
     override val vpnStateFlow: Flow<VpnState> = snapshotFlow { VpnStateStore.state }
         .distinctUntilChanged()
@@ -38,25 +41,17 @@ class AndroidRuntimeGateway(
     override val vpnErrorFlow: Flow<String?> = snapshotFlow { VpnStateStore.lastError }
         .distinctUntilChanged()
 
-    override val coreStatusFlow: Flow<CoreStatus?> = snapshotFlow { CoreStatusStore.status }
+    override val coreStatusFlow: Flow<CoreStatus?> = coreGateway.statusFlow
+
+    override val modeFlow: Flow<CoreClashMode?> = coreGateway.currentModeFlow
+        .map { raw -> CoreClashMode.fromRaw(raw) }
         .distinctUntilChanged()
 
-    override val modeFlow: Flow<ClashModeManager.ClashMode?> = snapshotFlow {
-        ClashModeManager.currentMode
-    }.distinctUntilChanged()
-
-    override val modeSupportedFlow: Flow<Boolean> = snapshotFlow {
-        ClashModeManager.isModeSupported
-    }.distinctUntilChanged()
+    override val modeSupportedFlow: Flow<Boolean> = coreGateway.clashModesFlow
+        .map { modes -> modes.isNotEmpty() }
+        .distinctUntilChanged()
 
     init {
-        scope.launch {
-            val settings = SettingsRepository.load(appContext)
-            val preferredMode = ClashModeManager.ClashMode.fromValue(settings.clashMode)
-                ?: ClashModeManager.ClashMode.Rule
-            ClashModeManager.updatePreferredMode(preferredMode)
-        }
-
         scope.launch {
             vpnStateFlow.collectLatest { state ->
                 val connected = state == VpnState.CONNECTED || state == VpnState.CONNECTING
@@ -64,11 +59,6 @@ class AndroidRuntimeGateway(
                     context = appContext,
                     connected = connected
                 )
-
-                // 连接建立后再次应用偏好模式，避免核心重载后回落到默认模式。
-                if (state == VpnState.CONNECTED && ClashApiClient.isConfigured()) {
-                    ClashModeManager.switchMode(ClashModeManager.preferredMode)
-                }
             }
         }
     }
@@ -85,26 +75,19 @@ class AndroidRuntimeGateway(
         }
     }
 
-    override suspend fun switchMode(mode: ClashModeManager.ClashMode): Result<Unit> {
+    override suspend fun switchMode(mode: CoreClashMode): Result<Unit> {
         val persistResult = persistModePreference(mode)
         if (persistResult.isFailure) {
             return persistResult
         }
-
-        ClashModeManager.updatePreferredMode(mode)
-
-        // 未连接时只保存偏好，连接后会自动应用。
-        if (!ClashApiClient.isConfigured()) {
-            return Result.success(Unit)
-        }
-
-        return ClashModeManager.switchMode(mode)
+        // 未连接时内核命令通道不可用，仅保存偏好；连接建立后会自动下发。
+        return coreGateway.setClashMode(mode.raw)
     }
 
-    private suspend fun persistModePreference(mode: ClashModeManager.ClashMode): Result<Unit> {
+    private suspend fun persistModePreference(mode: CoreClashMode): Result<Unit> {
         return runCatching {
             val current = SettingsRepository.load(appContext)
-            val updated = current.copy(clashMode = mode.value)
+            val updated = current.copy(clashMode = mode.raw)
             SettingsRepository.save(appContext, updated)
             ConfigRepository.applySettings(appContext, updated)
         }

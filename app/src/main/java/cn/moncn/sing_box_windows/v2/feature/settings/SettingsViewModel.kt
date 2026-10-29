@@ -3,7 +3,7 @@ package cn.moncn.sing_box_windows.v2.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import cn.moncn.sing_box_windows.config.AppSettings
+import cn.moncn.sing_box_windows.v2.data.config.AppSettings
 import cn.moncn.sing_box_windows.update.UpdateState
 import cn.moncn.sing_box_windows.v2.core.arch.MviViewModel
 import cn.moncn.sing_box_windows.v2.domain.settings.SettingsGateway

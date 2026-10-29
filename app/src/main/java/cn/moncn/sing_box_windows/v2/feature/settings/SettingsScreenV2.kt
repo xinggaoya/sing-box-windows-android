@@ -20,6 +20,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import cn.moncn.sing_box_windows.ui.theme.AppSpace
+import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -95,6 +97,7 @@ private fun SettingsScreenV2(
     onIntent: (SettingsIntent) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val tokens = LocalIndigoTokens.current
     val updateState = state.updateState
     val isCheckingUpdate = updateState is UpdateState.Checking
     val isDownloadingUpdate = updateState is UpdateState.Downloading
@@ -102,15 +105,15 @@ private fun SettingsScreenV2(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                brush = Brush.linearGradient(
-                    listOf(Color(0xFFF6FAFF), Color(0xFFEBF2FA), Color(0xFFF8FCFF))
+                brush = Brush.verticalGradient(
+                    listOf(tokens.bgBase, tokens.bgSurface2, tokens.bgBase)
                 )
             )
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(horizontal = AppSpace.xl, vertical = AppSpace.xl),
+            verticalArrangement = Arrangement.spacedBy(AppSpace.md)
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

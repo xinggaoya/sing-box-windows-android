@@ -1,6 +1,5 @@
 package cn.moncn.sing_box_windows.vpn
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
@@ -10,12 +9,18 @@ import android.os.Build
 import android.os.Process
 import android.system.OsConstants
 import android.util.Log
-import io.nekohasekai.libbox.Libbox
 import androidx.annotation.RequiresApi
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
+import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
+import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.PlatformUser
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
@@ -24,8 +29,14 @@ import java.net.Inet6Address
 import java.net.InetSocketAddress
 import java.net.InterfaceAddress
 import java.net.NetworkInterface
-import java.security.KeyStore
 
+/**
+ * Android 平台的 libbox 接口桥接。
+ *
+ * 适配 sing-box 1.14 的 `PlatformInterface`：
+ * 新增的 Shell / SSH / Bridge / Tailscale / 邻居发现等能力在 Android 上不适用，
+ * 统一以「明确不支持」的方式返回，避免内核误判为可用。
+ */
 class PlatformInterfaceBridge(
     private val context: Context,
     private val vpnService: AppVpnService
@@ -42,8 +53,6 @@ class PlatformInterfaceBridge(
         return vpnService.openTunForCore(options)
     }
 
-    override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -51,7 +60,7 @@ class PlatformInterfaceBridge(
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int
-    ): Int {
+    ): ConnectionOwner {
         val uid = connectivity?.getConnectionOwnerUid(
             ipProtocol,
             InetSocketAddress(sourceAddress, sourcePort),
@@ -60,31 +69,17 @@ class PlatformInterfaceBridge(
         if (uid == Process.INVALID_UID) {
             error("android: connection owner not found")
         }
-        return uid
-    }
-
-    override fun packageNameByUid(uid: Int): String {
+        val owner = ConnectionOwner()
+        owner.userId = uid
         val packages = context.packageManager.getPackagesForUid(uid)
-        if (packages.isNullOrEmpty()) error("android: package not found")
-        return packages[0]
-    }
-
-    @Suppress("DEPRECATION")
-    override fun uidByPackageName(packageName: String): Int {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageUid(
-                    packageName,
-                    PackageManager.PackageInfoFlags.of(0)
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                context.packageManager.getPackageUid(packageName, 0)
-            } else {
-                context.packageManager.getApplicationInfo(packageName, 0).uid
-            }
-        } catch (e: PackageManager.NameNotFoundException) {
-            error("android: package not found")
+        if (!packages.isNullOrEmpty()) {
+            owner.userName = packages[0]
+            owner.processPath = runCatching {
+                context.packageManager.getApplicationInfo(packages[0], 0).sourceDir
+            }.getOrNull() ?: ""
+            owner.setAndroidPackageNames(StringArray(packages.toList()))
         }
+        return owner
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
@@ -155,32 +150,62 @@ class PlatformInterfaceBridge(
 
     override fun localDNSTransport(): LocalDNSTransport? = LocalResolver
 
-    override fun systemCertificates(): StringIterator {
-        val certificates = mutableListOf<String>()
-        val keyStore = KeyStore.getInstance("AndroidCAStore")
-        keyStore.load(null, null)
-        val aliases = keyStore.aliases()
-        while (aliases.hasMoreElements()) {
-            val cert = keyStore.getCertificate(aliases.nextElement())
-            certificates.add(
-                "-----BEGIN CERTIFICATE-----\n" +
-                    android.util.Base64.encodeToString(cert.encoded, android.util.Base64.NO_WRAP) +
-                    "\n-----END CERTIFICATE-----"
-            )
-        }
-        return StringArray(certificates)
-    }
-
     override fun sendNotification(notification: io.nekohasekai.libbox.Notification) {
         vpnService.notifyCoreNotification(notification)
     }
 
-    override fun writeLog(message: String) {
-        Log.i("Libbox", message)
+    override fun cancelNotification(identifier: String, typeID: Int) {
+        vpnService.cancelCoreNotification(identifier, typeID)
     }
 
-    private class InterfaceArray(private val iterator: Iterator<LibboxNetworkInterface>) :
-        NetworkInterfaceIterator {
+    // ==================== Android 不支持的平台能力 ====================
+
+    override fun usePlatformShell(): Boolean = false
+
+    override fun checkPlatformShell() {
+        throw UnsupportedOperationException("platform shell is not supported on Android")
+    }
+
+    override fun openShellSession(
+        user: PlatformUser?,
+        command: String?,
+        environ: StringIterator?,
+        term: String?,
+        rows: Int,
+        cols: Int
+    ): ShellSession {
+        throw UnsupportedOperationException("platform shell is not supported on Android")
+    }
+
+    override fun lookupUser(username: String?): PlatformUser {
+        throw UnsupportedOperationException("lookupUser is not supported on Android")
+    }
+
+    override fun lookupSFTPServer(): String {
+        throw UnsupportedOperationException("lookupSFTPServer is not supported on Android")
+    }
+
+    override fun readSystemSSHHostKey(): String {
+        throw UnsupportedOperationException("readSystemSSHHostKey is not supported on Android")
+    }
+
+    override fun usePlatformBridge(): Boolean = false
+
+    override fun createBridge(options: BridgeOptions?): BridgeSession {
+        throw UnsupportedOperationException("platform bridge is not supported on Android")
+    }
+
+    override fun tailscaleHostname(): String = ""
+
+    override fun registerMyInterface(name: String?) = Unit
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener) = Unit
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener) = Unit
+
+    private class InterfaceArray(
+        private val iterator: Iterator<LibboxNetworkInterface>
+    ) : NetworkInterfaceIterator {
         override fun hasNext(): Boolean = iterator.hasNext()
         override fun next(): LibboxNetworkInterface = iterator.next()
     }

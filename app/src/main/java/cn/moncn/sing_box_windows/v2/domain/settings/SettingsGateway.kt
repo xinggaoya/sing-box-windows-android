@@ -1,6 +1,6 @@
 package cn.moncn.sing_box_windows.v2.domain.settings
 
-import cn.moncn.sing_box_windows.config.AppSettings
+import cn.moncn.sing_box_windows.v2.data.config.AppSettings
 import cn.moncn.sing_box_windows.update.GitHubRelease
 import cn.moncn.sing_box_windows.update.UpdateState
 import kotlinx.coroutines.flow.Flow

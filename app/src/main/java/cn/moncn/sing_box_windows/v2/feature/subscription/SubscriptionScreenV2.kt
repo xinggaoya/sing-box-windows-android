@@ -30,6 +30,8 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import cn.moncn.sing_box_windows.ui.theme.AppSpace
+import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -48,7 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cn.moncn.sing_box_windows.config.SubscriptionItem
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionItem
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionGateway
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -141,6 +143,7 @@ private fun SubscriptionScreenV2(
     onDelete: (String) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val tokens = LocalIndigoTokens.current
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = onAddClick) {
@@ -152,16 +155,16 @@ private fun SubscriptionScreenV2(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFFF6FAFF), Color(0xFFEAF2FA), Color(0xFFF8FCFF))
+                    brush = Brush.verticalGradient(
+                        listOf(tokens.bgBase, tokens.bgSurface2, tokens.bgBase)
                     )
                 )
                 .padding(innerPadding)
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                contentPadding = PaddingValues(horizontal = AppSpace.xl, vertical = AppSpace.xl),
+                verticalArrangement = Arrangement.spacedBy(AppSpace.md)
             ) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

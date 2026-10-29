@@ -1,0 +1,11 @@
+{
+  "source_repo": "https://github.com/SagerNet/sing-box",
+  "ref": "v1.14.4",
+  "tag": "v1.14.4",
+  "commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
+  "built_at_utc": "2026-10-29T15:38:08Z",
+  "go_version": "go1.27.0",
+  "java_version": "openjdk 17.0.21 2026-10-20",
+  "gomobile_version": "v0.1.13",
+  "android_ndk_version": "28.0.13004108"
+}

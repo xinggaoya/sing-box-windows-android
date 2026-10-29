@@ -42,6 +42,19 @@
 --dry-run               仅打印计划
 ```
 
+## 健壮性说明（v1.3.0 修复）
+
+脚本在真实环境中暴露并修复了以下问题，均已加入回归保护：
+
+| 问题 | 现象 | 修复 |
+| --- | --- | --- |
+| `GOBIN` 未绑定 | 宿主机设置了 `GOBIN`（如 mise/asdf 的 Go 安装）时，`go install` 装到 `GOBIN` 而非 `$GOPATH/bin`，上游报 `missing gomobile installation` | `setup_go` 中显式 `export GOBIN="${GOPATH}/bin"` |
+| `go` shim 覆盖 `JAVA_HOME` | mise/asdf 的 `go` 是 shim，会重写子进程环境，导致上游 `checkJavaVersion` 判定非 OpenJDK 17 而中止 | 解析真实 `GOROOT` 并前置到 `PATH`，绕过 shim |
+| 临时目录空间不足 | Go 默认把中间产物放在 `$TMPDIR`（部分环境是容量很小的 tmpfs），多 ABI 编译会耗尽磁盘 | 新增 `GOTMPDIR="${WORKDIR}/gotmp"`，统一收敛到工作目录 |
+| 源码目录不可复用 | 指定 `--workdir` 指向已有检出时 `git clone` 失败，脚本无法重跑 | `clone_sing_box` 优先复用已有工作区（fetch + checkout），保证幂等 |
+
+此外：`setup_java` 在复用系统 `JAVA_HOME` 时显式 `export`，避免依赖调用方环境。
+
 ## 环境前提
 
 脚本会自动下载临时 JDK/Go，但仍需要 Android SDK（可被脚本自动检测）。  

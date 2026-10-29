@@ -1,5 +1,82 @@
 # Sing Box Windows - Android VPN 客户端
 
+## v1.3.0 (2026-10-29)
+
+### 主要更新
+
+#### 内核升级：sing-box 1.12.0 → 1.14.4
+- `app/libs/libbox.aar` 重新编译自 sing-box **v1.14.4**（commit `c005f35`）
+- 新增 `app/libs/libbox.version.json`，记录上游标签 / 提交 / 工具链版本，内核来源可追溯
+- 同步适配 libbox 1.14 的 API 变更：
+  - `PlatformInterface`：新增 Shell / SSH / Bridge / Tailscale / 邻居发现等能力，
+    Android 端统一以「明确不支持」方式返回；`findConnectionOwner` 改为返回 `ConnectionOwner`
+  - `TunOptions`：`dns_server_address` 改为字符串迭代器，HTTP 代理相关字段上移
+  - `SetupOptions`：新增命令服务端口 / 密钥 / 日志缓冲行数等配置
+
+#### 内核接口迁移：Clash API → libbox 原生命令接口
+- **彻底移除 Clash API**（HTTP `127.0.0.1:9090` + WebSocket），与桌面端
+  `sing-box-windows` 迁移到 sing-box 官方 API 的方向保持一致
+- 新增 `v2/core` + `v2/data/core` 命令层：
+  - `SingBoxEngine`：由 `CommandServer` 托管内核实例（1.11 起 libbox 不再暴露独立 `BoxService`）
+  - `DefaultCoreGateway`：基于 `CommandClient` 订阅 `CommandStatus / CommandGroup /
+    CommandClashMode / CommandConnections / CommandOutbounds / CommandLog`
+  - `CoreCommandBridge`：进程级单例，供 DI 容器与 VPN 服务共享同一条命令通道
+- 全部数据改为**内核主动推送**（事件驱动），不再需要定时轮询：
+  - 流量 / 内存 / 协程数：Clash API WebSocket → `CommandStatus`
+  - 代理组 / 出站：轮询 `GET /proxies` → `CommandGroup` / `CommandOutbounds`
+  - 连接列表：新增能力 → `CommandConnections`
+  - 内核日志：新增能力 → `CommandLog`
+- 动作接口同步改为内核原生调用：`selectOutbound` / `urlTest` / `setClashMode` /
+  `setGroupExpand` / `closeConnection(s)`
+- 生成配置不再写入 `experimental.clash_api`，**关闭了本地 9090 端口的 HTTP / WS 监听**
+
+### 新增功能
+
+#### 桌面端能力对齐
+- 新增 **连接** 页面：活跃连接列表、上/下行流量、命中规则、单条 / 全部关闭
+- 新增 **日志** 页面：内核实时日志、按级别过滤、清空、等宽排版
+- 新增 **出站** 页面：出站清单、单条 / 全部测速、延迟状态
+- **代理** 页面（原节点面板）：代理组展开、节点选择、测速、选中态高亮
+
+### 界面改进
+
+#### 移植桌面端 Indigo 设计系统
+- 三层令牌结构：原始色板（Primitive）→ 语义令牌（Semantic）→ 尺寸令牌（Size）
+- 主色靛蓝 `#6366F1`（暗色 `#818CF8`），中性色 Slate，功能色绿 / 琥珀 / 红 / 蓝
+- 新增 `ui/theme/`：`IndigoPalette` / `IndigoTokens` / `Shape` / `Dimens` / `Type`
+- 新增 `ui/components/`：`SectionCard` / `MetricTile` / `StatusChip` / `EmptyState`
+- 首页、代理、连接、日志、出站、订阅、设置页面统一换肤，移除硬编码色值
+
+### 架构重构
+
+#### v2 为主线，老层下沉合并
+- 删除 `core/` 包下 15 个类（Clash API 系列、轮询管理器、状态存储等），全部职责并入 `v2/`
+- `config/` 包下沉至 `v2/data/config/`，包结构收敛为
+  `v2/{app,core,data,domain,feature}` + `ui/` + `vpn/` + `update/`
+- `MviViewModel` 改为 Channel 串行消费 Intent，消除并发交错导致的重复提交竞态
+- `V2Container` 注入 `CoreGateway`，依赖关系单向（feature → domain ← data）
+
+### 构建与工程
+
+- 修复 `gradlew` 缺少可执行位（全新克隆无法构建）
+- 依赖升级（保持 AGP 8.13.2 不变）：Kotlin `2.0.21 → 2.2.21`、
+  Compose BOM `2024.09.00 → 2026.06.01`（兼容 AGP 8.x 的最新版本）、Java `11 → 17`
+- Release 构建启用 R8 + 资源裁剪：APK 体积从 136.7 MB 降至 **78.5 MB**（arm64）
+- `scripts/update-libbox.sh` 修复三处健壮性问题：
+  - `GOBIN` 未绑定到 `$GOPATH/bin` 导致 `missing gomobile installation`
+  - mise / asdf 的 `go` shim 覆盖 `JAVA_HOME` 导致 OpenJDK 17 校验失败
+  - Go 临时编译目录落在容量受限的 `/tmp` 导致磁盘耗尽
+  - 源码目录复用逻辑，支持脚本幂等重跑
+- 新增 `.github/workflows/ci.yml`：推主干 / 提 PR 时执行 lint + 单元测试 + Debug 构建
+- `release.yml` 增加 Go 模块缓存、内核版本入参、单元测试步骤与内核版本摘要
+- 新增 21 个单元测试，覆盖格式化工具、领域模型、配置应用与模板生成
+
+### 文档
+
+- 新增 `docs/ARCHITECTURE_V3.md`，说明内核接口迁移、架构收敛与设计系统方案
+
+---
+
 ## v1.2.1 (2026-02-23)
 
 ### 主要修复

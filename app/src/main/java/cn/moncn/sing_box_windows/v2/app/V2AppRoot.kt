@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,8 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,22 +40,34 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import cn.moncn.sing_box_windows.ui.theme.AppLayout
+import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
 import cn.moncn.sing_box_windows.v2.core.di.V2Container.V2Graph
+import cn.moncn.sing_box_windows.v2.feature.connections.ConnectionsRouteV2
 import cn.moncn.sing_box_windows.v2.feature.home.HomeRouteV2
 import cn.moncn.sing_box_windows.v2.feature.home.HomeViewModel
+import cn.moncn.sing_box_windows.v2.feature.logs.LogsRouteV2
 import cn.moncn.sing_box_windows.v2.feature.nodes.NodesRouteV2
+import cn.moncn.sing_box_windows.v2.feature.outbounds.OutboundsRouteV2
 import cn.moncn.sing_box_windows.v2.feature.settings.SettingsRouteV2
 import cn.moncn.sing_box_windows.v2.feature.subscription.SubscriptionRouteV2
 
-private sealed class V2Screen(
+/** 应用路由表 */
+sealed class V2Route(
     val route: String,
     val title: String,
     val icon: ImageVector
 ) {
-    data object Home : V2Screen("home", "首页", Icons.Rounded.Home)
-    data object Subscription : V2Screen("subscription", "订阅", Icons.AutoMirrored.Rounded.List)
-    data object Nodes : V2Screen("nodes", "节点", Icons.Rounded.Dns)
-    data object Settings : V2Screen("settings", "设置", Icons.Rounded.Settings)
+    /** 底部导航项 */
+    data object Home : V2Route("home", "首页", Icons.Rounded.Home)
+    data object Proxy : V2Route("proxy", "代理", Icons.Rounded.Dns)
+    data object Connections : V2Route("connections", "连接", Icons.Rounded.Lan)
+    data object Subscription : V2Route("subscription", "订阅", Icons.AutoMirrored.Rounded.List)
+    data object Settings : V2Route("settings", "设置", Icons.Rounded.Settings)
+
+    /** 二级页面 */
+    data object Logs : V2Route("logs", "日志", Icons.Rounded.Home)
+    data object Outbounds : V2Route("outbounds", "出站", Icons.Rounded.Home)
 }
 
 @Composable
@@ -61,11 +75,13 @@ fun V2AppRoot(
     graph: V2Graph
 ) {
     val navController = rememberNavController()
+    val tokens = LocalIndigoTokens.current
     val screens = listOf(
-        V2Screen.Home,
-        V2Screen.Subscription,
-        V2Screen.Nodes,
-        V2Screen.Settings
+        V2Route.Home,
+        V2Route.Proxy,
+        V2Route.Connections,
+        V2Route.Subscription,
+        V2Route.Settings
     )
 
     Scaffold(
@@ -90,25 +106,39 @@ fun V2AppRoot(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = V2Screen.Home.route,
+            startDestination = V2Route.Home.route,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            composable(V2Screen.Home.route) {
+            composable(V2Route.Home.route) {
                 val viewModel: HomeViewModel = viewModel(
                     factory = HomeViewModel.factory(graph.runtimeGateway)
                 )
-                HomeRouteV2(viewModel = viewModel)
+                HomeRouteV2(
+                    viewModel = viewModel,
+                    onOpenLogs = { navController.navigate(V2Route.Logs.route) },
+                    onOpenOutbounds = { navController.navigate(V2Route.Outbounds.route) },
+                    onOpenConnections = { navController.navigate(V2Route.Connections.route) }
+                )
             }
-            composable(V2Screen.Subscription.route) {
-                SubscriptionRouteV2(gateway = graph.subscriptionGateway)
-            }
-            composable(V2Screen.Nodes.route) {
+            composable(V2Route.Proxy.route) {
                 NodesRouteV2(gateway = graph.nodesGateway)
             }
-            composable(V2Screen.Settings.route) {
+            composable(V2Route.Connections.route) {
+                ConnectionsRouteV2(coreGateway = graph.coreGateway)
+            }
+            composable(V2Route.Subscription.route) {
+                SubscriptionRouteV2(gateway = graph.subscriptionGateway)
+            }
+            composable(V2Route.Settings.route) {
                 SettingsRouteV2(gateway = graph.settingsGateway)
+            }
+            composable(V2Route.Logs.route) {
+                LogsRouteV2(coreGateway = graph.coreGateway)
+            }
+            composable(V2Route.Outbounds.route) {
+                OutboundsRouteV2(coreGateway = graph.coreGateway)
             }
         }
     }
@@ -116,20 +146,23 @@ fun V2AppRoot(
 
 @Composable
 private fun V2BottomBar(
-    screens: List<V2Screen>,
+    screens: List<V2Route>,
     currentDestination: NavDestination?,
-    onNavigate: (V2Screen) -> Unit
+    onNavigate: (V2Route) -> Unit
 ) {
-    val scheme = MaterialTheme.colorScheme
+    val tokens = LocalIndigoTokens.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .padding(
+                horizontal = AppLayout.bottomBarPadding,
+                vertical = AppLayout.bottomBarVerticalPadding
+            )
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-            color = Color(0xFFF2F7FF),
+            shape = RoundedCornerShape(28.dp),
+            color = tokens.bgSurface,
             shadowElevation = 14.dp,
             tonalElevation = 2.dp
         ) {
@@ -145,10 +178,7 @@ private fun V2BottomBar(
                         targetValue = if (selected) 1f else 0.97f,
                         label = "v2_bar_item_scale"
                     )
-                    val selectedBrush = Brush.horizontalGradient(
-                        colors = listOf(Color(0xFF5A84D9), Color(0xFF78A5EB))
-                    )
-                    val labelColor = if (selected) Color.White else scheme.onSurfaceVariant
+                    val labelColor = if (selected) tokens.primary else tokens.textTertiary
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -156,19 +186,25 @@ private fun V2BottomBar(
                                 scaleX = scale
                                 scaleY = scale
                             }
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
                             .background(
-                                brush = if (selected) selectedBrush else Brush.horizontalGradient(
-                                    listOf(Color.Transparent, Color.Transparent)
-                                )
+                                brush = if (selected) {
+                                    Brush.horizontalGradient(
+                                        listOf(tokens.primarySoft, tokens.primarySoftStrong)
+                                    )
+                                } else {
+                                    Brush.horizontalGradient(
+                                        listOf(Color.Transparent, Color.Transparent)
+                                    )
+                                }
                             )
                             .clickable { onNavigate(screen) }
-                            .padding(horizontal = 8.dp, vertical = 11.dp),
+                            .padding(horizontal = 6.dp, vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
                                 imageVector = screen.icon,
@@ -178,7 +214,7 @@ private fun V2BottomBar(
                             Text(
                                 text = screen.title,
                                 color = labelColor,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                             )
                         }

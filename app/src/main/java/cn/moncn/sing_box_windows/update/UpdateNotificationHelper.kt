@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.update
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -84,6 +85,9 @@ class UpdateNotificationHelper(
         }
     }
 
+    // POST_NOTIFICATIONS 权限已在下方 canPostNotification() 中显式检查，
+    // lint 无法跨函数推断，故在此处抑制 MissingPermission 告警。
+    @SuppressLint("MissingPermission")
     private fun notifySafely(id: Int, notification: android.app.Notification): Boolean {
         ensureChannel()
         if (!canPostNotification()) return false

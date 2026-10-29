@@ -2,6 +2,7 @@ package cn.moncn.sing_box_windows.v2.core.arch
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -12,10 +13,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * v2 MVI 基类：
- * 1) 所有用户输入通过 Intent 进入；
- * 2) 状态只允许通过 reducer 变更；
- * 3) 一次性事件通过 Effect 下发给 UI。
+ * MVI 基类：单向数据流。
+ *
+ * - `Intent` 统一走 [submitIntent]，由内部 Channel 串行消费，
+ *   避免多个 Intent 并发交错导致的竞态（例如重复提交保存）。
+ * - `State` 只读暴露，变更必须通过 [updateState]。
+ * - `Effect` 用于一次性事件（导航、Toast 等）。
  */
 abstract class MviViewModel<I : UiIntent, S : UiState, E : UiEffect>(
     initialState: S
@@ -28,10 +31,19 @@ abstract class MviViewModel<I : UiIntent, S : UiState, E : UiEffect>(
     )
     val effect: SharedFlow<E> = _effect.asSharedFlow()
 
-    fun submitIntent(intent: I) {
+    private val intents = Channel<I>(Channel.UNLIMITED)
+
+    init {
         viewModelScope.launch {
-            handleIntent(intent)
+            for (intent in intents) {
+                handleIntent(intent)
+            }
         }
+    }
+
+    /** 提交意图（串行处理） */
+    fun submitIntent(intent: I) {
+        intents.trySend(intent)
     }
 
     protected abstract suspend fun handleIntent(intent: I)

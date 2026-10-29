@@ -1,6 +1,6 @@
 package cn.moncn.sing_box_windows.v2.feature.subscription
 
-import cn.moncn.sing_box_windows.config.SubscriptionState
+import cn.moncn.sing_box_windows.v2.data.config.SubscriptionState
 import cn.moncn.sing_box_windows.v2.core.arch.UiIntent
 import cn.moncn.sing_box_windows.v2.core.arch.UiState
 

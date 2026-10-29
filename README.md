@@ -89,18 +89,24 @@ You can also import local node lists:
 - Real-time display of upload/download speeds
 - Statistics of cumulative traffic usage
 - Connection status monitoring
+- **Live Connections**: inspect and close active connections
+- **Kernel Logs**: real-time log stream with level filtering
+- **Outbound Inspector**: outbound inventory with latency testing
 
 ## 🛠️ Technical Specifications
 
-| Item                    | Specification                |
-| ----------------------- | ---------------------------- |
-| **Language**            | Kotlin                       |
-| **UI Framework**        | Jetpack Compose + Material 3 |
-| **Core Library**        | libbox (sing-box)            |
-| **Min SDK**             | API 29 (Android 10)          |
-| **Target SDK**          | API 36 (Android 15)          |
-| **Build Tool**          | Gradle with Kotlin DSL       |
-| **Supported Protocols** | VLESS, Shadowsocks, etc.     |
+| Item                    | Specification                          |
+| ----------------------- | -------------------------------------- |
+| **Language**            | Kotlin 2.2.21                          |
+| **UI Framework**        | Jetpack Compose (BOM 2026.06.01) + Material 3 |
+| **Core Library**        | libbox (sing-box **v1.14.4**)          |
+| **Core Control API**    | libbox `CommandServer` / `CommandClient` (official daemon gRPC) |
+| **Design System**       | Indigo tokens (aligned with the desktop client) |
+| **Min SDK**             | API 29 (Android 10)                    |
+| **Target SDK**          | API 36 (Android 15)                    |
+| **Java**                | 17                                     |
+| **Build Tool**          | Gradle 8.13 + AGP 8.13.2              |
+| **Supported Protocols** | VLESS, Shadowsocks, etc.               |
 
 ## 🔧 Development & Build
 
@@ -151,7 +157,7 @@ Signing is intentionally hardcoded (no environment variables):
 ./scripts/update-libbox.sh
 
 # Build a specific version
-./scripts/update-libbox.sh --version v1.12.0
+./scripts/update-libbox.sh --version v1.14.4
 ```
 
 See `docs/LIBBOX_AUTOBUILD.md` for full options and CI workflow details.
@@ -162,30 +168,35 @@ See `docs/LIBBOX_AUTOBUILD.md` for full options and CI workflow details.
 app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
-│   │   ├── config/          # Configuration management
-│   │   ├── core/            # Core functionality (Clash API, status, diagnostics)
-│   │   ├── ui/              # User interface (screens, components, theme)
-│   │   └── vpn/             # VPN service
+│   │   ├── ui/              # Design system (theme tokens, shared components, formatters)
+│   │   ├── update/          # In-app update module
+│   │   ├── vpn/             # VpnService + libbox platform bridge
+│   │   └── v2/              # Main line (Clean Architecture + MVI)
+│   │       ├── app/         # Navigation shell & route table
+│   │       ├── core/        # MVI base classes, DI container
+│   │       ├── domain/      # Interfaces & models (no Android/libbox types)
+│   │       ├── data/        # Implementations (core command layer, config, repositories)
+│   │       └── feature/     # home / proxy / connections / logs / outbounds / subscription / settings
 │   ├── res/                 # Resource files
-│   └── libs/                # Local dependencies (libbox.aar)
+│   └── libs/                # Local dependencies (libbox.aar + libbox.version.json)
 └── build.gradle             # Module build configuration
 ```
 
 ### Architecture Overview
 
-The app now defaults to a **v2 UDF/MVI architecture** (legacy entry is kept in codebase only for transition):
+The app follows a **Clean Architecture + MVI** structure:
 
-- **MVI Base**: Unified `Intent / State / Effect` flow
-- **Gateway Layer**: Runtime/Subscription/Nodes/Settings/Diagnostics capabilities are abstracted behind interfaces
-- **V2 Navigation Shell**: Home, Subscription, Nodes, Settings, Diagnostics all run on v2 flow
+- **Domain layer** (`v2/domain`): capability interfaces and models only — no Android or libbox types
+- **Data layer** (`v2/data`): all implementations, including the kernel command layer
+- **Feature layer** (`v2/feature`): screens + MVI ViewModels, depending on domain interfaces only
+- **MVI Base**: unified `Intent / State / Effect` flow with serialized intent consumption
 
-Legacy implementation follows **Singleton Store + Compose Reactive UI** pattern:
+**Kernel integration** uses libbox's built-in `CommandServer` / `CommandClient`
+(official sing-box daemon gRPC service) instead of the legacy Clash API HTTP/WebSocket
+bridge — the same direction the desktop client took. Traffic, groups, outbounds,
+connections and logs are all **pushed by the kernel**, so no polling is involved.
 
-- **Store Pattern**: Global state management using singleton objects with `mutableStateOf`
-- **Repository Pattern**: Configuration and subscription data persistence
-- **Manager Pattern**: Core functionality coordination (OutboundGroupManager, CoreStatusManager)
-
-For detailed architecture documentation, see [CLAUDE.md](CLAUDE.md).
+For detailed architecture documentation, see [docs/ARCHITECTURE_V3.md](docs/ARCHITECTURE_V3.md).
 
 ## 🤝 Contributing
 
@@ -211,11 +222,11 @@ See [CHANGELOG.md](docs/CHANGELOG.md) for detailed version update records.
 
 ### Recent Highlights
 
-**v1.1.0** (2025-12-23)
-- Clash API deep integration for real-time traffic statistics
-- Local node import support
-- Redesigned navigation with bottom bar
-- Enhanced settings with auto-save
+**v1.3.0** (2026-10-29)
+- sing-box core upgraded to **v1.14.4**
+- Migrated from the Clash API to libbox's native `CommandServer` / `CommandClient`
+- New Connections / Logs / Outbounds screens, desktop-aligned Indigo design system
+- Release APKs shrunk from 136.7 MB to 78.5 MB via R8
 
 ## 🐛 Issue Reporting
 

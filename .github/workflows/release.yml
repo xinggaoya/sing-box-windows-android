@@ -7,9 +7,19 @@ on:
   push:
     tags:
       - 'v*'  # 匹配 v 开头的标签，如 v1.0.0, v1.1.0
+  workflow_dispatch:
+    inputs:
+      libbox_version:
+        description: '指定 sing-box 内核标签（留空则使用最新 Release）'
+        required: false
+        default: ''
 
 permissions:
   contents: write  # 需要写入权限来创建 Release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -20,6 +30,7 @@ jobs:
     env:
       JAVA_VERSION: '17'
       JAVA_DISTRIBUTION: 'temurin'
+      GOTOOLCHAIN: 'local'
 
     steps:
       # 1. 检出代码（包含完整历史，用于获取标签信息）
@@ -114,26 +125,44 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      # 5.1 缓存 Go 模块与构建缓存（libbox 编译依赖）
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('scripts/update-libbox.sh') }}
+          restore-keys: go-${{ runner.os }}-
+
       # 6. 赋予 Gradle 执行权限
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 7. 构建前自动拉取并编译最新 libbox AAR
-      - name: Update latest libbox AAR
+      # 7. 构建前拉取并编译 libbox AAR
+      - name: Build libbox AAR
         run: |
           chmod +x scripts/update-libbox.sh
           SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          VERSION_ARG="${{ inputs.libbox_version }}"
+          ARGS=()
           if [ -n "$SDK_PATH" ]; then
-            ./scripts/update-libbox.sh --android-sdk "$SDK_PATH"
-          else
-            ./scripts/update-libbox.sh
+            ARGS+=(--android-sdk "$SDK_PATH")
           fi
+          if [ -n "$VERSION_ARG" ]; then
+            ARGS+=(--version "$VERSION_ARG")
+          fi
+          ./scripts/update-libbox.sh "${ARGS[@]}"
 
-      # 8. 构建 Release APK（所有架构）
+      # 8. 运行单元测试（确保内核/配置逻辑回归通过）
+      - name: Unit Test
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      # 9. 构建 Release APK（所有架构）
       - name: Build Release APKs
         run: ./gradlew assembleRelease --stacktrace
 
-      # 9. 校验 APK 签名（Release 构建时由 app/build.gradle 的 signingConfigs 完成签名）
+      # 10. 校验 APK 签名（Release 构建时由 app/build.gradle 的 signingConfigs 完成签名）
       - name: Verify APK signatures
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
@@ -147,7 +176,7 @@ jobs:
             "$APKSIGNER" verify --print-certs "$apk"
           done
 
-      # 10. 创建 Release 并上传 APK
+      # 11. 创建 Release 并上传 APK
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -162,7 +191,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 11. 上传构建产物（用于调试）
+      # 12. 上传构建产物（用于调试）
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -170,7 +199,7 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      # 12. 构建摘要
+      # 13. 构建摘要
       - name: Build Summary
         run: |
           echo "## 构建完成 :rocket:" >> $GITHUB_STEP_SUMMARY
@@ -178,6 +207,13 @@ jobs:
           echo "**版本**: ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**提交**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**签名状态**: :white_check_mark: 已签名（Gradle signingConfigs.release）" >> $GITHUB_STEP_SUMMARY
+          if [ -f app/libs/libbox.version.json ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**内核版本**:" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat app/libs/libbox.version.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 生成的 APK 文件" >> $GITHUB_STEP_SUMMARY

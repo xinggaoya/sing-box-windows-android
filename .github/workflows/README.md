@@ -1,8 +1,15 @@
 # GitHub Actions 自动化构建配置说明
 
-本项目使用 GitHub Actions 实现自动化构建 Release APK。
+本项目使用 GitHub Actions 实现持续集成与自动化发布。
 
-## 工作流程
+## 工作流一览
+
+| 工作流 | 文件 | 触发条件 | 作用 |
+| --- | --- | --- | --- |
+| CI | `ci.yml` | 推送 `master`/`main`、提交 PR | Lint + 单元测试 + Debug 构建 |
+| Release | `release.yml` | 推送 `v*` 标签、手动触发 | 编译内核 + 构建签名 Release APK + 创建 GitHub Release |
+
+## 发布工作流程
 
 ```
 推送 Git 标签 (v1.x.x)

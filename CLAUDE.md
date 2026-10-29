@@ -26,74 +26,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 核心架构模式
 
-应用采用 **单例状态管理 + Compose 响应式 UI** 模式：
+应用采用 **Clean Architecture + MVI** 模式：
 
-1. **Store 模式**: 全局状态使用单例对象 + `mutableStateOf` 管理，Compose UI 自动订阅变化
-2. **Repository 模式**: 配置和订阅数据通过 Repository 对象持久化到本地文件
-3. **Manager 模式**: 核心功能通过 Manager 单例协调（如 OutboundGroupManager、CoreStatusManager）
+1. **领域层 (`v2/domain`)**: 只定义能力接口与领域模型，**不含任何 Android / libbox 类型**
+2. **数据层 (`v2/data`)**: 全部实现（内核命令层、配置仓储、订阅仓储）
+3. **功能层 (`v2/feature`)**: 页面 + MVI ViewModel，仅依赖领域接口
+4. **MVI 基座 (`v2/core/arch`)**: 统一 `Intent / State / Effect` 数据流，
+   Intent 通过 `Channel` **串行消费**，避免并发交错导致的重复提交
+
+依赖方向单向：`feature → domain ← data`。
 
 ### 关键组件
 
-#### 1. VPN 服务层 (`vpn/`)
+#### 1. VPN 服务层 (`vpn/`) — 系统边界
 
-- `AppVpnService`: Android VpnService 实现，负责 VPN 接口的建立和管理
+- `AppVpnService`: Android VpnService 实现，负责 VPN 接口建立与生命周期
 - `VpnStateStore`: 全局 VPN 状态单例 (IDLE/CONNECTING/CONNECTED/ERROR)
 - `VpnController`: 控制 VPN 服务的启动/停止
-- `PlatformInterfaceBridge`: 连接 libbox 与 Android VPN 的桥梁
+- `PlatformInterfaceBridge`: 实现 libbox 1.14 的 `PlatformInterface`；
+  Shell / SSH / Bridge / Tailscale 等平台专属能力在 Android 上显式返回「不支持」
 
-#### 2. 核心引擎层 (`core/`)
+#### 2. 内核命令层 (`v2/data/core`) — ★ 核心
 
-- `SingBoxEngine`: sing-box 核心生命周期管理，负责启动/停止 libbox 服务
-- `LibboxManager`: libbox 库的初始化和管理
-- `CoreStatusManager/CoreStatusStore`: 核心状态（内存、连接数、流量）监控
-- `CoreInfoManager/CoreInfoStore`: 核心版本等信息管理
-- `OutboundGroupManager`: 节点分组管理，通过 Clash API 获取和操作节点
-- `ClashApiClient`: Clash API 客户端，与 sing-box 的 REST API 通信
-- `ClashApiStreamManager/ClashApiDiagnosticsManager`: Clash API 流量和诊断数据管理
+- `LibboxBootstrap`: libbox 全局引导（`SetupOptions`，含 `commandServerListenPort = 0`）
+- `SingBoxEngine`: 由 `CommandServer` 托管内核实例（1.11 起 libbox 不再暴露独立 `BoxService`）
+- `DefaultCoreGateway`: 基于 `CommandClient` 的 `CoreGateway` 实现，
+  内含 `CommandClientHandler` 回调转接
+- `CoreCommandBridge`: 进程级单例，供 DI 容器与 VPN 服务共享同一条命令通道
+- `CoreRuntimeCoordinator`: 配置准备 + 命令通道生命周期编排
+- `CoreInfoStore`: 内核版本（直接读 `Libbox.version()`）
 
-#### 3. 配置层 (`config/`)
+#### 3. 配置层 (`v2/data/config`)
 
 - `ConfigRepository`: sing-box JSON 配置的加载、保存和迁移
 - `ConfigSettingsApplier`: 将用户设置应用到配置 JSON
 - `ConfigDefaults`: 默认配置模板
-- `SubscriptionRepository`: 订阅列表的 CRUD 操作，支持远程订阅和本地节点导入
+- `SubscriptionRepository`: 订阅列表 CRUD，支持远程订阅与本地节点导入
 - `ClashConverter`: Clash YAML 配置转换为 sing-box JSON
-- `SettingsRepository/AppSettings`: 用户设置的持久化
+- `SettingsRepository/AppSettings`: 用户设置持久化
 
-#### 4. UI 层 (`ui/`)
+#### 4. 设计系统 (`ui/`)
 
-- `AppNavigation`: 底部导航栏和 NavHost 路由
-- `screens/`: 各功能页面 (HomeScreen, NodesScreen, SubscriptionScreen, SettingsScreen, DiagnosticsScreen)
-- `components/`: 可复用的 UI 组件
-- `theme/`: Material 3 主题和颜色定义
+- `theme/IndigoPalette`: 原始色板（与桌面端 `tokens.css` 第一层一致）
+- `theme/IndigoTokens`: 语义令牌（亮/暗两套）+ `LocalIndigoTokens`
+- `theme/Color / Shape / Dimens / Type`: Material3 配色、圆角、间距、字号
+- `components/`: `SectionCard` / `MetricTile` / `StatusChip` / `EmptyState` 等通用组件
+- `Format`: 字节 / 速率 / 时长格式化
 
-#### 5. 主入口 (`MainActivity.kt`)
+#### 5. 导航与入口 (`v2/app`、`v2/RefactorMainActivity.kt`)
 
-- Activity 作为状态管理中心，聚合所有 Store 的状态
-- 使用 `LaunchedEffect` 处理初始化和副作用
-- 通过 AppNavigation 将所有回调和状态传递给子页面
+- `V2AppRoot`: Scaffold + NavHost 壳层，底部导航 `首页 / 代理 / 连接 / 订阅 / 设置`
+- `V2Route`: 路由表，`日志` 与 `出站` 作为首页的二级入口
+- `V2Container`: 手写依赖装配，注入 5 个 Gateway
 
 ### 数据流
 
 ```
-用户操作 → MainActivity 回调 → Repository/Manager → libbox/文件系统
-                ↓
-          状态更新 (mutableStateOf)
-                ↓
-          Compose UI 自动重组
+用户操作 → ViewModel.submitIntent → MVI 串行处理 → domain Gateway
+                                                       ↓
+                                            data 层实现（libbox CommandClient）
+                                                       ↓
+                              内核 gRPC 主动推送 → MutableStateFlow → Compose UI
 ```
 
-### Clash API 集成
+### 内核接口集成
 
-应用通过 Clash REST API 与 sing-box 核心交互：
+应用通过 **libbox 自带的 `CommandServer` / `CommandClient`** 与 sing-box 交互
+（底层为 sing-box 官方 daemon gRPC 服务，与桌面端 `sing-box-windows` 同源）：
 
-- `/proxies`: 获取节点列表和分组
-- `/proxies/{group}`: 选择节点
-- `/proxies/{proxy}/delay`: 节点测速
-- `/connections`: 管理连接
-- `/traffic` (stream): 流量统计
+| 命令 | 用途 | 取代的 Clash API 端点 |
+| --- | --- | --- |
+| `CommandStatus` | 流量 / 内存 / 协程数 | WS `/traffic` `/memory` |
+| `CommandGroup` | 代理组与成员 | `GET /proxies` |
+| `CommandOutbounds` | 出站列表 | `GET /proxies` |
+| `CommandConnections` | 活跃连接 | `GET /connections` |
+| `CommandClashMode` | 代理模式 | `GET /configs` / `PATCH /configs` |
+| `CommandLog` | 内核日志 | 无（新增能力） |
 
-Clash API 配置通过 `AppSettings.clashApiEnabled` 和 `clashApiAddress` 控制。
+动作接口：`selectOutbound` / `urlTest` / `setClashMode` / `setGroupExpand` /
+`closeConnection(s)`。
+
+> **配置中不再写入 `experimental.clash_api`**，因此应用不会在 `127.0.0.1:9090`
+> 开启 HTTP / WebSocket 监听；代理模式改为连接建立后通过 `setClashMode` 下发。
 
 ## 重要约定
 
