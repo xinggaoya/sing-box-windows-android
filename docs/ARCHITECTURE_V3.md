@@ -149,7 +149,6 @@ CommandClient ──gRPC(unix socket command.sock / 127.0.0.1:port)──▶ Com
 ```
 cn/moncn/sing_box_windows/
 ├── ui/                     设计系统：theme/ + components/ + Format 工具
-├── update/                 应用内更新模块（独立职责，保留）
 ├── vpn/                    VpnService + PlatformInterface 桥接（系统边界，保留）
 └── v2/
     ├── RefactorMainActivity.kt
@@ -157,16 +156,17 @@ cn/moncn/sing_box_windows/
     ├── core/
     │   ├── arch/           MviViewModel（Channel 串行消费 Intent）、UiContract
     │   └── di/             V2Container
-    ├── domain/             core / nodes / subscription / settings / runtime
-    ├── data/               config / core / nodes / runtime / settings / subscription
+    ├── domain/             core / nodes / subscription / settings / runtime / update
+    ├── data/               config / core / nodes / runtime / settings / subscription / update
     └── feature/            connections / home / logs / nodes / outbounds / settings / subscription
 ```
 
 **收敛原则**
 
-1. `v2/domain/*` 只定义接口与模型，**不含任何 Android / libbox 类型**
+1. `v2/domain/*` 只定义接口与模型，**不含任何 Android / libbox / 实现层类型**
+   （已校验：domain 层 0 处越界 import，feature 层 0 处直接依赖 data/libbox）
 2. `v2/data/*` 持有全部实现，`v2/feature/*` 只依赖 `domain` 接口
-3. 老 `core/` 全部能力下沉；`vpn/` 属系统边界保留；`update/` 属独立功能保留
+3. 老 `core/` 全部能力下沉；`vpn/` 属系统边界保留；应用内更新模块归入 `v2/data/update`
 4. `MviViewModel` 改为 `Channel<I>` 串行消费 Intent，消除 `submitIntent` 并发交错
    （原 `SettingsViewModel.save()` 的 `isSaving` 检查存在竞态）
 

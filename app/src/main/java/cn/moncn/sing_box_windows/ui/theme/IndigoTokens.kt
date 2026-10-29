@@ -122,8 +122,9 @@ data class IndigoTokens(
 
             textPrimary = Color(0xFFF8FAFC),
             textSecondary = IndigoPalette.Slate300,
-            textTertiary = IndigoPalette.Slate600,
-            textDisabled = IndigoPalette.Slate700,
+            // 对齐桌面端 tokens.css 暗色档：tertiary=slate-500 / disabled=slate-600
+            textTertiary = IndigoPalette.Slate500,
+            textDisabled = IndigoPalette.Slate600,
             textOnPrimary = Color(0xFFFFFFFF),
 
             bgBase = IndigoPalette.Slate900,

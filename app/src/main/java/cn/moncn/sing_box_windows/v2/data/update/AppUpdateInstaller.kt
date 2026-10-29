@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.data.update
 
 import android.app.PendingIntent
 import android.content.Context

@@ -1,6 +1,6 @@
 package cn.moncn.sing_box_windows.v2.feature.subscription
 
-import cn.moncn.sing_box_windows.v2.data.config.SubscriptionState
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionState
 import cn.moncn.sing_box_windows.v2.core.arch.UiIntent
 import cn.moncn.sing_box_windows.v2.core.arch.UiState
 
@@ -10,7 +10,6 @@ data class SubscriptionUiState(
     val isLoading: Boolean = true,
     val message: String? = null,
     val error: String? = null,
-    val updatedAt: Long = 0L
 ) : UiState
 
 sealed interface SubscriptionIntent : UiIntent {

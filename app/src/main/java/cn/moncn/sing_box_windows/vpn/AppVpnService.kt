@@ -34,6 +34,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
+import cn.moncn.sing_box_windows.v2.domain.runtime.VpnState
 
 class AppVpnService : android.net.VpnService() {
     private var vpnInterface: android.os.ParcelFileDescriptor? = null
@@ -41,7 +42,21 @@ class AppVpnService : android.net.VpnService() {
     val wifiManager: WifiManager? by lazy { getSystemService(WifiManager::class.java) }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 关闭内核专用的作用域。
+     *
+     * 内核关闭（`closeService` 内含 `runtimeDebug.FreeOSMemory`）是阻塞调用，
+     * 放在主线程会有 ANR 风险；同时它不能随着 [serviceScope] 一起被取消，
+     * 否则 `stopSelf()` 触发的 `onDestroy()` 会把正在进行的关闭流程打断。
+     */
+    private val shutdownScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val isStarting = AtomicBoolean(false)
+
+    /** 最近一次准备好的运行配置，供内核发起重载时同步取用 */
+    @Volatile
+    private var preparedConfig: String? = null
 
     override fun onBind(intent: Intent?): IBinder? {
         return super.onBind(intent)
@@ -56,6 +71,11 @@ class AppVpnService : android.net.VpnService() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        // 兜底：服务被系统销毁时内核也必须关闭，否则下次无法重新启动 VPN。
+        shutdownScope.launch {
+            runCatching { CoreCommandBridge.disconnect() }
+            runCatching { SingBoxEngine.stop() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -89,6 +109,7 @@ class AppVpnService : android.net.VpnService() {
         serviceScope.launch {
             val result = try {
                 val appliedConfig = CoreRuntimeCoordinator.prepareRuntimeConfig(this@AppVpnService)
+                preparedConfig = appliedConfig
                 SingBoxEngine.start(appliedConfig, platform, serverCallbacks)
             } catch (error: Exception) {
                 CoreStartResult(
@@ -111,11 +132,15 @@ class AppVpnService : android.net.VpnService() {
 
     private fun stopTunnel(resetState: Boolean = true) {
         isStarting.set(false)
-        // 先断开内核命令通道，再关闭内核与 TUN
-        serviceScope.launch { CoreCommandBridge.disconnect() }
-        SingBoxEngine.stop()
+        // 关闭内核是阻塞 native 调用，必须离开主线程；
+        // 且使用 shutdownScope，避免被 onDestroy 的 serviceScope.cancel() 打断。
+        shutdownScope.launch {
+            runCatching { CoreCommandBridge.disconnect() }
+            runCatching { SingBoxEngine.stop() }
+        }
         vpnInterface?.close()
         vpnInterface = null
+        preparedConfig = null
         if (resetState) {
             VpnStateStore.update(VpnState.IDLE)
         }
@@ -134,11 +159,17 @@ class AppVpnService : android.net.VpnService() {
         }
 
         override fun onReloadRequested(): String? {
-            return runCatching {
-                runBlocking(Dispatchers.IO) {
+            // 该回调运行在内核的 Go 线程上，不能在这里做阻塞 IO；
+            // 直接返回已缓存的配置，并把刷新动作放到后台线程。
+            val cached = preparedConfig
+            shutdownScope.launch {
+                val refreshed = runCatching {
                     CoreRuntimeCoordinator.prepareRuntimeConfig(this@AppVpnService)
-                }
-            }.getOrNull()
+                }.getOrNull() ?: return@launch
+                preparedConfig = refreshed
+                runCatching { SingBoxEngine.reload(refreshed) }
+            }
+            return cached
         }
     }
 

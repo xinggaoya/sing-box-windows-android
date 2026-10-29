@@ -27,8 +27,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,7 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cn.moncn.sing_box_windows.update.UpdateState
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
 import cn.moncn.sing_box_windows.v2.domain.settings.SettingsGateway
 
 private val DNS_STRATEGIES = listOf("prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
@@ -57,7 +57,7 @@ fun SettingsRouteV2(
     gateway: SettingsGateway
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(gateway))
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     if (!state.error.isNullOrBlank()) {
         AlertDialog(
@@ -217,6 +217,7 @@ private fun SettingsScreenV2(
             item {
                 UpdateCard(
                     updateState = state.updateState,
+                    kernelVersion = state.kernelVersion,
                     onIntent = onIntent
                 )
             }
@@ -229,6 +230,7 @@ private fun SettingsScreenV2(
 @Composable
 private fun UpdateCard(
     updateState: UpdateState,
+    kernelVersion: String?,
     onIntent: (SettingsIntent) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -241,6 +243,13 @@ private fun UpdateCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("应用更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (!kernelVersion.isNullOrBlank()) {
+                Text(
+                    "内核版本：sing-box $kernelVersion",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant
+                )
+            }
             when (updateState) {
                 UpdateState.Idle -> {
                     Text("点击“检查更新”以获取最新版本。", color = scheme.onSurfaceVariant)

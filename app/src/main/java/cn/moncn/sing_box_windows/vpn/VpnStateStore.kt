@@ -3,6 +3,7 @@ package cn.moncn.sing_box_windows.vpn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import cn.moncn.sing_box_windows.v2.domain.runtime.VpnState
 
 object VpnStateStore {
     var state by mutableStateOf(VpnState.IDLE)

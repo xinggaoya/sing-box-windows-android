@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.data.update
 
 import android.content.Context
 import android.util.Log
@@ -12,6 +12,8 @@ import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import cn.moncn.sing_box_windows.v2.domain.update.ReleaseAsset
+import cn.moncn.sing_box_windows.v2.domain.update.DownloadProgress
 
 /**
  * APK 下载器

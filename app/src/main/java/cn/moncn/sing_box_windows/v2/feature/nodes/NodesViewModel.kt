@@ -17,8 +17,7 @@ class NodesViewModel(
             gateway.groupsFlow.collectLatest { groups ->
                 updateState { current ->
                     current.copy(
-                        groups = groups,
-                        updatedAt = now()
+                        groups = groups
                     )
                 }
             }
@@ -32,8 +31,7 @@ class NodesViewModel(
                     .onFailure { error ->
                         updateState { current ->
                             current.copy(
-                                error = error.message ?: "节点切换失败",
-                                updatedAt = now()
+                                error = error.message ?: "节点切换失败"
                             )
                         }
                     }
@@ -43,8 +41,7 @@ class NodesViewModel(
                 result.onFailure { error ->
                     updateState { current ->
                         current.copy(
-                            error = error.message ?: "测速失败",
-                            updatedAt = now()
+                            error = error.message ?: "测速失败"
                         )
                     }
                 }
@@ -52,8 +49,7 @@ class NodesViewModel(
             NodesIntent.ClearError -> {
                 updateState { current ->
                     current.copy(
-                        error = null,
-                        updatedAt = now()
+                        error = null
                     )
                 }
             }
@@ -61,6 +57,15 @@ class NodesViewModel(
     }
 
     private fun now(): Long = System.currentTimeMillis()
+
+
+    /**
+     * Intent 处理出现未预期异常时的兜底：写入错误状态，
+     * 避免异常只停留在日志里、用户却看不到任何提示。
+     */
+    override fun onIntentError(intent: NodesIntent, error: Throwable) {
+        updateState { current -> current.copy(error = error.message ?: "操作失败") }
+    }
 
     companion object {
         fun factory(gateway: NodesGateway): ViewModelProvider.Factory {

@@ -6,9 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import cn.moncn.sing_box_windows.update.UpdateManager
+import cn.moncn.sing_box_windows.v2.data.update.UpdateManager
 import cn.moncn.sing_box_windows.v2.data.core.LibboxBootstrap
-import cn.moncn.sing_box_windows.update.UpdateStore
+import cn.moncn.sing_box_windows.v2.data.update.UpdateStore
 import cn.moncn.sing_box_windows.ui.theme.SingboxwindowsTheme
 import cn.moncn.sing_box_windows.v2.app.V2AppRoot
 import cn.moncn.sing_box_windows.v2.core.di.V2Container

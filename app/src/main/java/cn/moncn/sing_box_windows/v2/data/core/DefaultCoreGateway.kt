@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.v2.data.core
 
+import android.util.Log
 import cn.moncn.sing_box_windows.v2.domain.core.CoreConnection
 import cn.moncn.sing_box_windows.v2.domain.core.CoreConnectionState
 import cn.moncn.sing_box_windows.v2.domain.core.CoreGateway
@@ -23,6 +24,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -33,7 +37,8 @@ import kotlinx.coroutines.withContext
  * 应用侧无需任何轮询或 JSON 解析。
  *
  * 线程模型：libbox 回调来自 Go 协程线程，本类全部通过 `MutableStateFlow`
- * （原子更新）写入，天然线程安全。
+ * （原子更新）写入，天然线程安全；连接 / 断开操作用互斥锁串行化，
+ * 避免并发调用创建出多个 `CommandClient`。
  */
 class DefaultCoreGateway : CoreGateway {
 
@@ -46,11 +51,21 @@ class DefaultCoreGateway : CoreGateway {
     private val currentModeState = MutableStateFlow<String?>(null)
     private val connectionStateState = MutableStateFlow(CoreConnectionState.DISCONNECTED)
 
+    /** 串行化 connect / disconnect，防止并发创建多个 CommandClient */
+    private val clientMutex = Mutex()
+
     @Volatile
     private var client: CommandClient? = null
 
+    /** 主动断开标记：用于区分「用户主动断开」与「内核侧异常断开」 */
+    @Volatile
+    private var userDisconnecting = false
+
     /** 速率平滑：内核每秒推送一次，直接展示会明显跳动，这里做加权平均 */
+    @Volatile
     private var lastUplink = 0L
+
+    @Volatile
     private var lastDownlink = 0L
 
     // ==================== 对外状态 ====================
@@ -69,29 +84,49 @@ class DefaultCoreGateway : CoreGateway {
     // ==================== 生命周期 ====================
 
     override suspend fun connect() {
-        if (client != null) return
-        connectionStateState.value = CoreConnectionState.CONNECTING
-        withContext(Dispatchers.IO) {
-            val options = CommandClientOptions().apply {
-                addCommand(Libbox.CommandStatus)
-                addCommand(Libbox.CommandGroup)
-                addCommand(Libbox.CommandClashMode)
-                addCommand(Libbox.CommandConnections)
-                addCommand(Libbox.CommandOutbounds)
-                addCommand(Libbox.CommandLog)
-                statusInterval = STATUS_INTERVAL_MS
+        clientMutex.withLock {
+            if (client != null) return
+            connectionStateState.value = CoreConnectionState.CONNECTING
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val options = CommandClientOptions().apply {
+                        addCommand(Libbox.CommandStatus)
+                        addCommand(Libbox.CommandGroup)
+                        addCommand(Libbox.CommandClashMode)
+                        addCommand(Libbox.CommandConnections)
+                        addCommand(Libbox.CommandOutbounds)
+                        addCommand(Libbox.CommandLog)
+                        statusInterval = STATUS_INTERVAL_MS
+                    }
+                    Libbox.newCommandClient(handler, options).also { it.connect() }
+                }
             }
-            val created = Libbox.newCommandClient(handler, options)
-            created.connect()
-            client = created
+            result.onSuccess { created ->
+                client = created
+                connectionStateState.value = CoreConnectionState.CONNECTED
+            }.onFailure { error ->
+                // 建立失败不能让状态卡在 CONNECTING，否则上层永远等不到重连信号
+                Log.w(TAG, "connect command client failed", error)
+                client = null
+                connectionStateState.value = CoreConnectionState.DISCONNECTED_ERROR
+            }
         }
     }
 
     override suspend fun disconnect() {
-        val current = client ?: return
-        client = null
-        withContext(Dispatchers.IO) {
-            runCatching { current.disconnect() }
+        val current = clientMutex.withLock {
+            val existing = client
+            client = null
+            existing
+        } ?: return
+
+        userDisconnecting = true
+        try {
+            withContext(Dispatchers.IO) {
+                runCatching { current.disconnect() }
+            }
+        } finally {
+            userDisconnecting = false
         }
         connectionStateState.value = CoreConnectionState.DISCONNECTED
         statusState.value = null
@@ -149,6 +184,9 @@ class DefaultCoreGateway : CoreGateway {
         }
 
         override fun disconnected(message: String?) {
+            // 主动断开时不视为异常
+            if (userDisconnecting) return
+            Log.w(TAG, "command channel disconnected: ${message.orEmpty()}")
             connectionStateState.value = CoreConnectionState.DISCONNECTED_ERROR
         }
 
@@ -166,7 +204,7 @@ class DefaultCoreGateway : CoreGateway {
                 batch.add(CoreLogEntry(entry.level, entry.message))
             }
             if (batch.isEmpty()) return
-            logsState.value = (logsState.value + batch).takeLast(MAX_LOG_ENTRIES)
+            logsState.update { (it + batch).takeLast(MAX_LOG_ENTRIES) }
         }
 
         override fun writeStatus(message: StatusMessage?) {
@@ -194,17 +232,11 @@ class DefaultCoreGateway : CoreGateway {
             while (message.hasNext()) {
                 val group = message.next() ?: continue
                 val items = ArrayList<OutboundGroupItem>()
-                val iterator = group.items ?: continue
-                while (iterator.hasNext()) {
-                    val item = iterator.next() ?: continue
-                    items.add(
-                        OutboundGroupItem(
-                            tag = item.tag,
-                            type = item.type,
-                            urlTestTime = item.getURLTestTime(),
-                            urlTestDelay = item.getURLTestDelay()
-                        )
-                    )
+                group.items?.let { iterator ->
+                    while (iterator.hasNext()) {
+                        val item = iterator.next() ?: continue
+                        items.add(item.toDomain())
+                    }
                 }
                 result.add(
                     OutboundGroup(
@@ -225,14 +257,7 @@ class DefaultCoreGateway : CoreGateway {
             val result = ArrayList<OutboundGroupItem>()
             while (message.hasNext()) {
                 val item = message.next() ?: continue
-                result.add(
-                    OutboundGroupItem(
-                        tag = item.tag,
-                        type = item.type,
-                        urlTestTime = item.getURLTestTime(),
-                        urlTestDelay = item.getURLTestDelay()
-                    )
-                )
+                result.add(item.toDomain())
             }
             outboundsState.value = result
         }
@@ -254,16 +279,18 @@ class DefaultCoreGateway : CoreGateway {
 
         override fun writeConnectionEvents(events: ConnectionEvents?) {
             if (events == null) return
-            val snapshot = if (events.reset) {
-                HashMap<String, CoreConnection>()
-            } else {
-                LinkedHashMap(connectionsState.value)
-            }
             val iterator = events.iterator() ?: return
-            while (iterator.hasNext()) {
-                applyConnectionEvent(iterator.next(), snapshot)
+            connectionsState.update { current ->
+                val snapshot = if (events.reset) {
+                    LinkedHashMap<String, CoreConnection>()
+                } else {
+                    LinkedHashMap(current)
+                }
+                while (iterator.hasNext()) {
+                    applyConnectionEvent(iterator.next(), snapshot)
+                }
+                snapshot
             }
-            connectionsState.value = snapshot
         }
     }
 
@@ -300,6 +327,13 @@ class DefaultCoreGateway : CoreGateway {
         }
     }
 
+    private fun io.nekohasekai.libbox.OutboundGroupItem.toDomain() = OutboundGroupItem(
+        tag = tag,
+        type = type,
+        urlTestTime = getURLTestTime(),
+        urlTestDelay = getURLTestDelay()
+    )
+
     private fun io.nekohasekai.libbox.Connection.toDomain() = CoreConnection(
         id = getID(),
         inbound = inbound,
@@ -323,6 +357,8 @@ class DefaultCoreGateway : CoreGateway {
     )
 
     companion object {
+        private const val TAG = "DefaultCoreGateway"
+
         /** 状态推送间隔（毫秒） */
         private const val STATUS_INTERVAL_MS = 1000L
 

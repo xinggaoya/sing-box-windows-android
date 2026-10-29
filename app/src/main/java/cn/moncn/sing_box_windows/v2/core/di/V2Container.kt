@@ -15,7 +15,8 @@ import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionGateway
 /**
  * v2 依赖装配入口。
  *
- * 内核命令网关为进程级单例（与 VPN 服务共享同一条命令通道）。
+ * 依赖图在进程内缓存：各 Gateway 内部持有协程作用域，
+ * 若每次 Activity 重建都新建实例，会残留重复的采集协程。
  */
 object V2Container {
     data class V2Graph(
@@ -26,14 +27,21 @@ object V2Container {
         val coreGateway: CoreGateway
     )
 
+    @Volatile
+    private var cached: V2Graph? = null
+
     fun provideGraph(context: Context): V2Graph {
-        val appContext = context.applicationContext
-        return V2Graph(
-            runtimeGateway = AndroidRuntimeGateway(appContext),
-            subscriptionGateway = DefaultSubscriptionGateway(appContext),
-            nodesGateway = DefaultNodesGateway(),
-            settingsGateway = DefaultSettingsGateway(appContext),
-            coreGateway = CoreCommandBridge.coreGateway
-        )
+        cached?.let { return it }
+        return synchronized(this) {
+            cached ?: create(context.applicationContext).also { cached = it }
+        }
     }
+
+    private fun create(appContext: Context): V2Graph = V2Graph(
+        runtimeGateway = AndroidRuntimeGateway(appContext),
+        subscriptionGateway = DefaultSubscriptionGateway(appContext),
+        nodesGateway = DefaultNodesGateway(),
+        settingsGateway = DefaultSettingsGateway(appContext),
+        coreGateway = CoreCommandBridge.coreGateway
+    )
 }

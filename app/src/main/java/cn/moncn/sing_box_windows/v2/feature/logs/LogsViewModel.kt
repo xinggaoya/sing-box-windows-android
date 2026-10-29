@@ -50,6 +50,15 @@ class LogsViewModel(
         }
     }
 
+
+    /**
+     * Intent 处理出现未预期异常时的兜底：写入错误状态，
+     * 避免异常只停留在日志里、用户却看不到任何提示。
+     */
+    override fun onIntentError(intent: LogsIntent, error: Throwable) {
+        updateState { current -> current.copy(error = error.message ?: "操作失败") }
+    }
+
     companion object {
         fun factory(coreGateway: CoreGateway): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {

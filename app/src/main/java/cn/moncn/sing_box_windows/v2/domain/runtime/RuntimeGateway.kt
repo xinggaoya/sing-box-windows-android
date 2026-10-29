@@ -2,7 +2,7 @@ package cn.moncn.sing_box_windows.v2.domain.runtime
 
 import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
 import cn.moncn.sing_box_windows.v2.domain.core.CoreStatus
-import cn.moncn.sing_box_windows.vpn.VpnState
+import cn.moncn.sing_box_windows.v2.domain.runtime.VpnState
 import kotlinx.coroutines.flow.Flow
 
 /**

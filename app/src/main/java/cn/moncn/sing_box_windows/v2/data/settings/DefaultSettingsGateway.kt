@@ -1,13 +1,13 @@
 package cn.moncn.sing_box_windows.v2.data.settings
 
 import android.content.Context
-import cn.moncn.sing_box_windows.v2.data.config.AppSettings
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 import cn.moncn.sing_box_windows.v2.data.config.ConfigRepository
 import cn.moncn.sing_box_windows.v2.data.config.SettingsRepository
-import cn.moncn.sing_box_windows.update.GitHubRelease
-import cn.moncn.sing_box_windows.update.UpdateManager
-import cn.moncn.sing_box_windows.update.UpdateState
-import cn.moncn.sing_box_windows.update.UpdateStore
+import cn.moncn.sing_box_windows.v2.domain.update.GitHubRelease
+import cn.moncn.sing_box_windows.v2.data.update.UpdateManager
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
+import cn.moncn.sing_box_windows.v2.data.update.UpdateStore
 import cn.moncn.sing_box_windows.v2.domain.settings.SettingsGateway
 import kotlinx.coroutines.flow.Flow
 import java.io.File

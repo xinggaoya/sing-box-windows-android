@@ -1,6 +1,8 @@
 package cn.moncn.sing_box_windows.v2.data.config
 
 import android.content.Context
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettingsDefaults
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 
 object SettingsRepository {
     private const val PREFS_NAME = "app_settings"

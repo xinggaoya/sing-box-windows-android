@@ -71,6 +71,28 @@
 - `release.yml` 增加 Go 模块缓存、内核版本入参、单元测试步骤与内核版本摘要
 - 新增 21 个单元测试，覆盖格式化工具、领域模型、配置应用与模板生成
 
+### 代码审查修复
+
+经两轮独立代码审查（对照上游 sing-box v1.14.4 源码与 AAR 字节码逐项校验），
+修复以下阻塞级与重要级问题：
+
+- **MVI 消费协程异常兜底**：`handleIntent` 抛异常会导致消费协程终止，
+  后续 Intent 被静默吞掉且可能直接崩溃 —— 增加异常边界与 `onIntentError` 钩子，
+  各 ViewModel 将异常写入状态并在页面提示
+- **内核命令通道建立失败不再卡死**：失败时状态回落为 `DISCONNECTED_ERROR`，
+  并由 `AndroidRuntimeGateway` 按指数退避自动重连
+- **内核关闭移出主线程**：`closeService` 内含 `FreeOSMemory`，放在主线程有 ANR 风险；
+  改用独立于 `onDestroy` 的 shutdown 作用域，确保关闭流程不被取消
+- **内核启动失败不再泄漏 gRPC Server**：启动异常时关闭已拉起的命令服务
+- **内核重载不再阻塞 Go 线程**：改为返回缓存配置 + 后台异步刷新
+- **依赖方向彻底收敛**：领域模型下沉到 `v2/domain`（设置 / 订阅 / VPN 状态 / 更新），
+  `v2/domain` 与 `v2/feature` 均 0 处越界依赖；应用更新模块归入 `v2/data/update`
+- **暗色模式文本可读性**：次要 / 禁用文本色档位对齐桌面端 tokens.css，
+  修复深色下仪表盘标签近乎不可见
+- **移除无消费方的 `updatedAt`**：该字段破坏 StateFlow 相等性合并，导致每秒全量重组
+- 页面状态改用 `collectAsStateWithLifecycle`；列表补稳定 key；
+  三个新页面补齐错误提示；设置页展示内核版本
+
 ### 文档
 
 - 新增 `docs/ARCHITECTURE_V3.md`，说明内核接口迁移、架构收敛与设计系统方案

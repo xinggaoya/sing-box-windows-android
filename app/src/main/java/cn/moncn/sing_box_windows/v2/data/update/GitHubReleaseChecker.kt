@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.data.update
 
 import android.content.Context
 import android.os.Build
@@ -10,6 +10,10 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateConfig
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateCheckResult
+import cn.moncn.sing_box_windows.v2.domain.update.ReleaseAsset
+import cn.moncn.sing_box_windows.v2.domain.update.GitHubRelease
 
 /**
  * GitHub Release 版本检查器

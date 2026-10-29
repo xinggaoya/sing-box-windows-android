@@ -29,8 +29,7 @@ class HomeViewModel(
                     .onFailure { error ->
                         updateState { current ->
                             current.copy(
-                                lastError = error.message ?: "模式切换失败",
-                                updatedAt = System.currentTimeMillis()
+                                lastError = error.message ?: "模式切换失败"
                             )
                         }
                     }
@@ -39,8 +38,7 @@ class HomeViewModel(
                 if (!intent.granted) {
                     updateState { current ->
                         current.copy(
-                            lastError = "VPN 权限被拒绝",
-                            updatedAt = System.currentTimeMillis()
+                            lastError = "VPN 权限被拒绝"
                         )
                     }
                     return
@@ -50,7 +48,7 @@ class HomeViewModel(
 
             HomeIntent.ClearError -> {
                 updateState { current ->
-                    current.copy(lastError = null, updatedAt = System.currentTimeMillis())
+                    current.copy(lastError = null)
                 }
             }
         }
@@ -61,8 +59,7 @@ class HomeViewModel(
             runtimeGateway.vpnStateFlow.collectLatest { vpnState ->
                 updateState { current ->
                     current.copy(
-                        vpnState = vpnState,
-                        updatedAt = System.currentTimeMillis()
+                        vpnState = vpnState
                     )
                 }
             }
@@ -72,8 +69,7 @@ class HomeViewModel(
             runtimeGateway.coreStatusFlow.collectLatest { status ->
                 updateState { current ->
                     current.copy(
-                        coreStatus = status,
-                        updatedAt = System.currentTimeMillis()
+                        coreStatus = status
                     )
                 }
             }
@@ -83,8 +79,7 @@ class HomeViewModel(
             runtimeGateway.modeFlow.collectLatest { mode ->
                 updateState { current ->
                     current.copy(
-                        currentMode = mode,
-                        updatedAt = System.currentTimeMillis()
+                        currentMode = mode
                     )
                 }
             }
@@ -94,8 +89,7 @@ class HomeViewModel(
             runtimeGateway.modeSupportedFlow.collectLatest { supported ->
                 updateState { current ->
                     current.copy(
-                        modeSupported = supported,
-                        updatedAt = System.currentTimeMillis()
+                        modeSupported = supported
                     )
                 }
             }
@@ -106,8 +100,7 @@ class HomeViewModel(
                 if (error.isNullOrBlank()) return@collectLatest
                 updateState { current ->
                     current.copy(
-                        lastError = error,
-                        updatedAt = System.currentTimeMillis()
+                        lastError = error
                     )
                 }
             }
@@ -119,8 +112,7 @@ class HomeViewModel(
             .onFailure { error ->
                 updateState { current ->
                     current.copy(
-                        lastError = error.message ?: "启动失败",
-                        updatedAt = System.currentTimeMillis()
+                        lastError = error.message ?: "启动失败"
                     )
                 }
             }
@@ -131,11 +123,19 @@ class HomeViewModel(
             .onFailure { error ->
                 updateState { current ->
                     current.copy(
-                        lastError = error.message ?: "停止失败",
-                        updatedAt = System.currentTimeMillis()
+                        lastError = error.message ?: "停止失败"
                     )
                 }
             }
+    }
+
+
+    /**
+     * Intent 处理出现未预期异常时的兜底：写入错误状态，
+     * 避免异常只停留在日志里、用户却看不到任何提示。
+     */
+    override fun onIntentError(intent: HomeIntent, error: Throwable) {
+        updateState { current -> current.copy(lastError = error.message ?: "操作失败") }
     }
 
     companion object {

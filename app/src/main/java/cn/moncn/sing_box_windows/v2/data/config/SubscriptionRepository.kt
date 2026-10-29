@@ -1,5 +1,10 @@
 package cn.moncn.sing_box_windows.v2.data.config
 
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionEditResult
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionItem
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionState
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionUpdateResult
+
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
@@ -15,48 +20,7 @@ import java.net.URL
 import java.net.URLDecoder
 import java.util.UUID
 import java.util.zip.GZIPInputStream
-
-data class SubscriptionItem(
-    val id: String,
-    val name: String,
-    val url: String,
-    val lastUpdatedAt: Long? = null,
-    val lastError: String? = null,
-    val isLocal: Boolean = false,
-    val content: String? = null
-)
-
-data class SubscriptionState(
-    val items: List<SubscriptionItem>,
-    val selectedId: String?
-) {
-    fun selected(): SubscriptionItem? = items.firstOrNull { it.id == selectedId }
-
-    companion object {
-        fun empty(): SubscriptionState = SubscriptionState(emptyList(), null)
-    }
-}
-
-data class SubscriptionUpdateResult(
-    val ok: Boolean,
-    val message: String,
-    val warnings: List<String>,
-    val state: SubscriptionState
-)
-
-data class SubscriptionAddResult(
-    val state: SubscriptionState,
-    val item: SubscriptionItem
-)
-
-data class SubscriptionEditResult(
-    val ok: Boolean,
-    val message: String,
-    val state: SubscriptionState,
-    val item: SubscriptionItem? = null,
-    val urlChanged: Boolean = false,
-    val nameChanged: Boolean = false
-)
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionAddResult
 
 object SubscriptionRepository {
     private const val FILE_NAME = "subscriptions.json"

@@ -5,7 +5,7 @@ import cn.moncn.sing_box_windows.v2.core.arch.UiIntent
 import cn.moncn.sing_box_windows.v2.core.arch.UiState
 import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
 import cn.moncn.sing_box_windows.v2.domain.core.CoreStatus
-import cn.moncn.sing_box_windows.vpn.VpnState
+import cn.moncn.sing_box_windows.v2.domain.runtime.VpnState
 
 data class HomeUiState(
     val vpnState: VpnState = VpnState.IDLE,
@@ -13,7 +13,6 @@ data class HomeUiState(
     val currentMode: CoreClashMode? = null,
     val modeSupported: Boolean = false,
     val lastError: String? = null,
-    val updatedAt: Long = 0L
 ) : UiState {
     val connected: Boolean = vpnState == VpnState.CONNECTED
     val connecting: Boolean = vpnState == VpnState.CONNECTING

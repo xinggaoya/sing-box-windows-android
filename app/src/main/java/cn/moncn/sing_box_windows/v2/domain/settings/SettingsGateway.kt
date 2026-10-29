@@ -1,8 +1,8 @@
 package cn.moncn.sing_box_windows.v2.domain.settings
 
-import cn.moncn.sing_box_windows.v2.data.config.AppSettings
-import cn.moncn.sing_box_windows.update.GitHubRelease
-import cn.moncn.sing_box_windows.update.UpdateState
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
+import cn.moncn.sing_box_windows.v2.domain.update.GitHubRelease
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 

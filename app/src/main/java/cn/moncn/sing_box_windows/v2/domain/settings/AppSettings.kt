@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.v2.data.config
+package cn.moncn.sing_box_windows.v2.domain.settings
 
 data class AppSettings(
     val dnsStrategy: String = AppSettingsDefaults.DNS_STRATEGY,

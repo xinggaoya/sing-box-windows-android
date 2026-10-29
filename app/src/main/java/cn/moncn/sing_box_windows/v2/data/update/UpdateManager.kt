@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.data.update
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateConfig
+import cn.moncn.sing_box_windows.v2.domain.update.GitHubRelease
 
 /**
  * 应用更新管理器

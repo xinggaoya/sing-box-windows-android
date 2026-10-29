@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.v2.data.config
 
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

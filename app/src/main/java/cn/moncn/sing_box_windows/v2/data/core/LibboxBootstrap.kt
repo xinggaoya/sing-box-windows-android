@@ -1,6 +1,7 @@
 package cn.moncn.sing_box_windows.v2.data.core
 
 import android.content.Context
+import android.util.Log
 import go.Seq
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
@@ -13,6 +14,8 @@ import java.util.Locale
  * 设置 gomobile 上下文、本地化以及内核的目录、日志缓冲等全局选项。
  */
 object LibboxBootstrap {
+    private const val TAG = "LibboxBootstrap"
+
     @Volatile
     private var initialized = false
 
@@ -24,7 +27,10 @@ object LibboxBootstrap {
         synchronized(this) {
             if (initialized) return
             Seq.setContext(context)
-            Libbox.setLocale(Locale.getDefault().toLanguageTag().replace("-", "_"))
+            // 语言包匹配失败不应阻断初始化（内核会回退到英文）
+            runCatching {
+                Libbox.setLocale(Locale.getDefault().toLanguageTag().replace("-", "_"))
+            }.onFailure { Log.w(TAG, "set locale failed, fallback to default", it) }
 
             val baseDir = context.filesDir.also { it.mkdirs() }
             val workingDir = context.getExternalFilesDir(null)?.also { it.mkdirs() } ?: baseDir

@@ -38,10 +38,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -50,7 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cn.moncn.sing_box_windows.v2.data.config.SubscriptionItem
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionItem
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionGateway
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,7 +67,7 @@ fun SubscriptionRouteV2(
     val viewModel: SubscriptionViewModel = viewModel(
         factory = SubscriptionViewModel.factory(gateway)
     )
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     var adding by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<SubscriptionItem?>(null) }

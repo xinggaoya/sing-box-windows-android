@@ -12,14 +12,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -43,7 +45,20 @@ fun OutboundsRouteV2(
     modifier: Modifier = Modifier
 ) {
     val viewModel: OutboundsViewModel = viewModel(factory = OutboundsViewModel.factory(coreGateway))
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    if (!state.error.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { viewModel.submitIntent(OutboundsIntent.ClearError) },
+            title = { Text("出站操作失败") },
+            text = { Text(state.error.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.submitIntent(OutboundsIntent.ClearError) }) {
+                    Text("知道了")
+                }
+            }
+        )
+    }
 
     OutboundsScreenV2(
         state = state,

@@ -35,8 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,7 +55,7 @@ import cn.moncn.sing_box_windows.ui.theme.AppRadius
 import cn.moncn.sing_box_windows.ui.theme.AppSpace
 import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
 import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
-import cn.moncn.sing_box_windows.vpn.VpnState
+import cn.moncn.sing_box_windows.v2.domain.runtime.VpnState
 import kotlinx.coroutines.flow.collect
 
 @Composable
@@ -67,7 +67,7 @@ fun HomeRouteV2(
     onOpenConnections: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()

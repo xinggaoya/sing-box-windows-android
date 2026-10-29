@@ -166,13 +166,12 @@ app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
 │   │   ├── ui/              # 设计系统 (主题令牌, 通用组件, 格式化工具)
-│   │   ├── update/          # 应用内更新模块
 │   │   ├── vpn/             # VpnService 与 libbox 平台桥接
 │   │   └── v2/              # 主线 (Clean Architecture + MVI)
 │   │       ├── app/         # 导航壳层与路由表
 │   │       ├── core/        # MVI 基座、依赖装配
-│   │       ├── domain/      # 接口与领域模型 (不含 Android/libbox 类型)
-│   │       ├── data/        # 实现层 (内核命令层, 配置, 仓储)
+│   │       ├── domain/      # 接口与领域模型 (不含 Android/libbox/实现层类型)
+│   │       ├── data/        # 实现层 (内核命令层, 配置, 仓储, 应用更新)
 │   │       └── feature/     # home / proxy / connections / logs / outbounds / subscription / settings
 │   ├── res/                 # 资源文件
 │   └── libs/                # 本地依赖库 (libbox.aar + libbox.version.json)

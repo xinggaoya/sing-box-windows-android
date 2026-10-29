@@ -58,6 +58,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### 3. 配置层 (`v2/data/config`)
 
+> 领域模型已下沉到 `v2/domain`：`AppSettings` → `v2/domain/settings`，
+> 订阅模型 → `v2/domain/subscription`，`VpnState` → `v2/domain/runtime`，
+> 更新模型 → `v2/domain/update`。
+
 - `ConfigRepository`: sing-box JSON 配置的加载、保存和迁移
 - `ConfigSettingsApplier`: 将用户设置应用到配置 JSON
 - `ConfigDefaults`: 默认配置模板

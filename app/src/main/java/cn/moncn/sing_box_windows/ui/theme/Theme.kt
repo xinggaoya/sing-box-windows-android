@@ -13,21 +13,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-/** 主题模式，对齐桌面端的亮/暗/跟随系统三态 */
-enum class ThemeMode {
-    SYSTEM,
-    LIGHT,
-    DARK;
-
-    companion object {
-        fun fromName(raw: String?): ThemeMode = when (raw?.lowercase()) {
-            "light" -> LIGHT
-            "dark" -> DARK
-            else -> SYSTEM
-        }
-    }
-}
-
 /**
  * 应用主题入口。
  *

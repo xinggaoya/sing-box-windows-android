@@ -14,8 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -23,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -66,8 +70,8 @@ sealed class V2Route(
     data object Settings : V2Route("settings", "设置", Icons.Rounded.Settings)
 
     /** 二级页面 */
-    data object Logs : V2Route("logs", "日志", Icons.Rounded.Home)
-    data object Outbounds : V2Route("outbounds", "出站", Icons.Rounded.Home)
+    data object Logs : V2Route("logs", "日志", Icons.Rounded.Terminal)
+    data object Outbounds : V2Route("outbounds", "出站", Icons.Rounded.CallSplit)
 }
 
 @Composable
@@ -76,13 +80,15 @@ fun V2AppRoot(
 ) {
     val navController = rememberNavController()
     val tokens = LocalIndigoTokens.current
-    val screens = listOf(
-        V2Route.Home,
-        V2Route.Proxy,
-        V2Route.Connections,
-        V2Route.Subscription,
-        V2Route.Settings
-    )
+    val screens = remember {
+        listOf(
+            V2Route.Home,
+            V2Route.Proxy,
+            V2Route.Connections,
+            V2Route.Subscription,
+            V2Route.Settings
+        )
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -117,9 +123,9 @@ fun V2AppRoot(
                 )
                 HomeRouteV2(
                     viewModel = viewModel,
-                    onOpenLogs = { navController.navigate(V2Route.Logs.route) },
-                    onOpenOutbounds = { navController.navigate(V2Route.Outbounds.route) },
-                    onOpenConnections = { navController.navigate(V2Route.Connections.route) }
+                    onOpenLogs = { navController.navigateSingleTop(V2Route.Logs.route) },
+                    onOpenOutbounds = { navController.navigateSingleTop(V2Route.Outbounds.route) },
+                    onOpenConnections = { navController.navigateSingleTop(V2Route.Connections.route) }
                 )
             }
             composable(V2Route.Proxy.route) {
@@ -141,6 +147,13 @@ fun V2AppRoot(
                 OutboundsRouteV2(coreGateway = graph.coreGateway)
             }
         }
+    }
+}
+
+/** 二级页面导航：避免重复压入同一路由 */
+private fun NavHostController.navigateSingleTop(route: String) {
+    navigate(route) {
+        launchSingleTop = true
     }
 }
 

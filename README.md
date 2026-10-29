@@ -169,13 +169,12 @@ app/
 ├── src/main/
 │   ├── java/cn/moncn/sing_box_windows/
 │   │   ├── ui/              # Design system (theme tokens, shared components, formatters)
-│   │   ├── update/          # In-app update module
 │   │   ├── vpn/             # VpnService + libbox platform bridge
 │   │   └── v2/              # Main line (Clean Architecture + MVI)
 │   │       ├── app/         # Navigation shell & route table
 │   │       ├── core/        # MVI base classes, DI container
-│   │       ├── domain/      # Interfaces & models (no Android/libbox types)
-│   │       ├── data/        # Implementations (core command layer, config, repositories)
+│   │       ├── domain/      # Interfaces & models (no Android/libbox/impl types)
+│   │       ├── data/        # Implementations (core command layer, config, repos, updater)
 │   │       └── feature/     # home / proxy / connections / logs / outbounds / subscription / settings
 │   ├── res/                 # Resource files
 │   └── libs/                # Local dependencies (libbox.aar + libbox.version.json)

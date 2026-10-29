@@ -2,6 +2,7 @@ package cn.moncn.sing_box_windows.v2.data.config
 
 import org.json.JSONArray
 import org.json.JSONObject
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 
 object ConfigSettingsApplier {
     fun applySettings(rawJson: String, settings: AppSettings): String {

@@ -1,4 +1,4 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.data.update
 
 import android.annotation.SuppressLint
 import android.Manifest
@@ -11,6 +11,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import java.io.File
+import cn.moncn.sing_box_windows.v2.domain.update.GitHubRelease
+import cn.moncn.sing_box_windows.v2.domain.update.DownloadProgress
 
 /**
  * 应用更新通知助手：

@@ -1,8 +1,8 @@
 package cn.moncn.sing_box_windows.v2.domain.subscription
 
-import cn.moncn.sing_box_windows.v2.data.config.SubscriptionEditResult
-import cn.moncn.sing_box_windows.v2.data.config.SubscriptionState
-import cn.moncn.sing_box_windows.v2.data.config.SubscriptionUpdateResult
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionEditResult
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionState
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionUpdateResult
 
 interface SubscriptionGateway {
     suspend fun load(): SubscriptionState

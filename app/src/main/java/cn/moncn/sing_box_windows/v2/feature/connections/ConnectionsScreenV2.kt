@@ -14,13 +14,16 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -47,7 +50,20 @@ fun ConnectionsRouteV2(
     val viewModel: ConnectionsViewModel = viewModel(
         factory = ConnectionsViewModel.factory(coreGateway)
     )
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    if (!state.error.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { viewModel.submitIntent(ConnectionsIntent.ClearError) },
+            title = { Text("连接操作失败") },
+            text = { Text(state.error.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.submitIntent(ConnectionsIntent.ClearError) }) {
+                    Text("知道了")
+                }
+            }
+        )
+    }
 
     ConnectionsScreenV2(
         state = state,

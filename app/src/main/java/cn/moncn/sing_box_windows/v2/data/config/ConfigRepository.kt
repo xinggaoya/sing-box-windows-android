@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 
 object ConfigRepository {
     private const val FILE_NAME = "singbox.json"

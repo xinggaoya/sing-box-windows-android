@@ -45,8 +45,9 @@ object SingBoxEngine {
             return CoreStartResult(ok = true)
         }
         this.callbacks = callbacks
+        var instance: CommandServer? = null
         return try {
-            val instance = Libbox.newCommandServer(handler, platform)
+            instance = Libbox.newCommandServer(handler, platform)
             // 拉起本地命令服务（未配置端口时使用 basePath 下的 unix socket）
             instance.start()
             // 启动内核
@@ -55,7 +56,13 @@ object SingBoxEngine {
             CoreStartResult(ok = true)
         } catch (error: Exception) {
             Log.e(TAG, "core start failed", error)
-            release()
+            // 启动失败时必须关闭已拉起的命令服务，否则 gRPC Server 与 socket 会残留泄漏
+            runCatching { instance?.closeService() }
+                .onFailure { Log.w(TAG, "close service failed", it) }
+            runCatching { instance?.close() }
+                .onFailure { Log.w(TAG, "close command server failed", it) }
+            server = null
+            this.callbacks = null
             CoreStartResult(ok = false, error = error.message ?: "core start failed")
         }
     }

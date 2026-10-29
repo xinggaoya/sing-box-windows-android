@@ -1,6 +1,5 @@
-package cn.moncn.sing_box_windows.update
+package cn.moncn.sing_box_windows.v2.domain.update
 
-import android.os.Parcelable
 import java.io.File
 
 /**

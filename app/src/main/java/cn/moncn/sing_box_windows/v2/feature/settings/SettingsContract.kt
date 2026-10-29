@@ -1,7 +1,7 @@
 package cn.moncn.sing_box_windows.v2.feature.settings
 
-import cn.moncn.sing_box_windows.v2.data.config.AppSettingsDefaults
-import cn.moncn.sing_box_windows.update.UpdateState
+import cn.moncn.sing_box_windows.v2.domain.settings.AppSettingsDefaults
+import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
 import cn.moncn.sing_box_windows.v2.core.arch.UiIntent
 import cn.moncn.sing_box_windows.v2.core.arch.UiState
 
@@ -19,7 +19,8 @@ data class SettingsUiState(
     val updateState: UpdateState = UpdateState.Idle,
     val message: String? = null,
     val error: String? = null,
-    val updatedAt: Long = 0L
+    /** 内核（libbox / sing-box）版本 */
+    val kernelVersion: String? = null,
 ) : UiState
 
 sealed interface SettingsIntent : UiIntent {
