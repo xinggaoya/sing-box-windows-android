@@ -142,6 +142,58 @@ CommandClient ──gRPC(unix socket command.sock / 127.0.0.1:port)──▶ Com
 
 ---
 
+## 3.6 配置生成与格式迁移（补充）
+
+内核二进制升级后，**配置格式必须同步迁移**，否则内核会直接拒绝解码
+（`legacy inbound fields are deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0`）。
+
+### 生成层（`v2/data/config/`）
+
+| 文件 | 职责 |
+| --- | --- |
+| `TemplateConfigBuilder` | 订阅 → sing-box 配置模板（1.14 格式） |
+| `ConfigDefaults` | 兜底默认配置（1.14 格式） |
+| `ClashConverter` | Clash YAML → sing-box 配置（1.14 格式） |
+| `ConfigSettingsApplier` | 把用户设置写入配置 |
+| **`ConfigMigrator`** | **历史配置 → 当前内核格式** |
+| `ConfigRepository` | 配置持久化 + 归一化（加载时自动套用迁移） |
+
+### 迁移项
+
+| 来源 | 目标 | 说明 |
+| --- | --- | --- |
+| 入站 `sniff` / `sniff_override_destination` / `sniff_timeout` / `domain_strategy` / `udp_disable_domain_unmapping` | 移除 | 1.11 弃用 / 1.13 移除；嗅探改由 `route.rules` 的 `action: sniff` 承担 |
+| DNS `independent_cache` | 移除 | 1.14 弃用 / 1.16 移除，缓存行为已由内核固定 |
+| DNS 服务器 `{"address": "tls://1.1.1.1"}` | `{"type": "tls", "server": "1.1.1.1"}` | 1.12 弃用 / 1.14 移除（含 path / port 拆分） |
+| `experimental.clash_api` | 移除 | 已由 libbox 原生命令接口取代，不再开启本地 9090 监听 |
+
+### 双保险
+
+1. **加载即迁移**：`ConfigRepository.loadOrCreateConfig` 对设备上已持久化的
+   历史配置自动迁移并回写，用户无需手动重置订阅
+2. **启动即校验**：`SingBoxEngine.start` 先调用内核自身的 `Libbox.checkConfig`，
+   配置非法时把内核给出的**精确原因**直接呈现，而不是笼统的「启动失败」
+
+### 回归防护
+
+`SingBoxConfigOracleTest` 用**真实 sing-box CLI** 对四类配置执行 `check`：
+
+- 订阅生成的模板配置
+- 默认兜底配置
+- 迁移后的历史配置
+- Clash 格式转换结果
+
+```bash
+# 构建与 AAR 同 revision 的 sing-box CLI 作为校验 oracle
+go build -tags "with_quic,with_wireguard,with_utls,with_clash_api,with_gvisor" \
+  -o /tmp/sing-box-cli ./cmd/sing-box
+SING_BOX_CLI=/tmp/sing-box-cli ./gradlew :app:testDebugUnitTest
+```
+
+未提供 `SING_BOX_CLI` 时该组用例会自动跳过，不影响常规 CI。
+
+---
+
 ## 4. 架构收敛（v2 为主线，已执行）
 
 包结构（实现后）：
