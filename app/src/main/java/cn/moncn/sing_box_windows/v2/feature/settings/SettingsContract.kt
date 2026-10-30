@@ -9,7 +9,6 @@ import cn.moncn.sing_box_windows.ui.theme.ThemeMode
 data class SettingsUiState(
     val dnsStrategy: String = AppSettingsDefaults.DNS_STRATEGY,
     val dnsCacheEnabled: Boolean = AppSettingsDefaults.DNS_CACHE_ENABLED,
-    val dnsIndependentCache: Boolean = AppSettingsDefaults.DNS_INDEPENDENT_CACHE,
     val tunMtuInput: String = AppSettingsDefaults.TUN_MTU.toString(),
     val tunAutoRoute: Boolean = AppSettingsDefaults.TUN_AUTO_ROUTE,
     val tunStrictRoute: Boolean = AppSettingsDefaults.TUN_STRICT_ROUTE,
@@ -30,7 +29,6 @@ sealed interface SettingsIntent : UiIntent {
     data object Load : SettingsIntent
     data class ChangeDnsStrategy(val value: String) : SettingsIntent
     data class ChangeDnsCacheEnabled(val value: Boolean) : SettingsIntent
-    data class ChangeDnsIndependentCache(val value: Boolean) : SettingsIntent
     data class ChangeTunMtuInput(val value: String) : SettingsIntent
     data class ChangeTunAutoRoute(val value: Boolean) : SettingsIntent
     data class ChangeTunStrictRoute(val value: Boolean) : SettingsIntent

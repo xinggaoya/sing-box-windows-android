@@ -30,7 +30,6 @@ class SettingsViewModel(
             SettingsIntent.Load -> load()
             is SettingsIntent.ChangeDnsStrategy -> updateState { it.copy(dnsStrategy = intent.value) }
             is SettingsIntent.ChangeDnsCacheEnabled -> updateState { it.copy(dnsCacheEnabled = intent.value) }
-            is SettingsIntent.ChangeDnsIndependentCache -> updateState { it.copy(dnsIndependentCache = intent.value) }
             is SettingsIntent.ChangeTunMtuInput -> updateState {
                 it.copy(tunMtuInput = intent.value.filter(Char::isDigit))
             }
@@ -116,7 +115,6 @@ class SettingsViewModel(
                     it.copy(
                         dnsStrategy = settings.dnsStrategy,
                         dnsCacheEnabled = settings.dnsCacheEnabled,
-                        dnsIndependentCache = settings.dnsIndependentCache,
                         tunMtuInput = settings.tunMtu.toString(),
                         tunAutoRoute = settings.tunAutoRoute,
                         tunStrictRoute = settings.tunStrictRoute,
@@ -144,7 +142,6 @@ class SettingsViewModel(
         val settings = AppSettings(
             dnsStrategy = current.dnsStrategy,
             dnsCacheEnabled = current.dnsCacheEnabled,
-            dnsIndependentCache = current.dnsIndependentCache,
             tunMtu = normalizedMtu,
             tunAutoRoute = current.tunAutoRoute,
             tunStrictRoute = current.tunStrictRoute,

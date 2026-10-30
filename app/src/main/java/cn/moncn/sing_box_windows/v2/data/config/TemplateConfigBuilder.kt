@@ -277,7 +277,6 @@ object TemplateConfigBuilder {
                             .put("server", TAG_DNS_PROXY)
                     )
             )
-            .put("independent_cache", true)
             .put("strategy", "prefer_ipv4")
             .put("final", TAG_DNS_DIRECT)
     }
@@ -507,6 +506,14 @@ object TemplateConfigBuilder {
             )
     }
 
+    /**
+     * 入站配置。
+     *
+     * 注意：sing-box 1.11 起入站不再支持 `sniff` / `sniff_override_destination` /
+     * `domain_strategy` 等 legacy 字段（1.13.0 已彻底移除），
+     * 改由 `route.rules` 的 `sniff` / `resolve` 动作承担，
+     * 参见 https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions
+     */
     private fun buildInbounds(): JSONArray {
         val inbound = JSONObject()
             .put("type", "tun")
@@ -521,7 +528,6 @@ object TemplateConfigBuilder {
             .put("auto_route", true)
             .put("strict_route", true)
             .put("stack", "system")
-            .put("sniff", true)
             .put(
                 "platform",
                 JSONObject()
@@ -536,9 +542,9 @@ object TemplateConfigBuilder {
 
         val mixedInbound = JSONObject()
             .put("type", "mixed")
+            .put("tag", "mixed-in")
             .put("listen", "127.0.0.1")
             .put("listen_port", 1082)
-            .put("sniff", true)
             .put("users", JSONArray())
 
         val socksInbound = JSONObject()

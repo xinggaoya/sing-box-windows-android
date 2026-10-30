@@ -39,8 +39,7 @@ class ConfigSettingsApplierTest {
     fun applySettings_writesDnsStrategyAndCacheFlags() {
         val settings = AppSettings(
             dnsStrategy = "ipv4_only",
-            dnsCacheEnabled = false,
-            dnsIndependentCache = false
+            dnsCacheEnabled = false
         )
         val result = JSONObject(
             ConfigSettingsApplier.applySettings(baseConfig().toString(), settings)
@@ -48,7 +47,8 @@ class ConfigSettingsApplierTest {
         val dns = result.getJSONObject("dns")
         assertEquals("ipv4_only", dns.getString("strategy"))
         assertTrue(dns.getBoolean("disable_cache"))
-        assertFalse(dns.getBoolean("independent_cache"))
+        // sing-box 1.14 起 independent_cache 已废弃（1.16 移除），不应再写入
+        assertFalse(dns.has("independent_cache"))
         assertEquals(
             "ipv4_only",
             result.getJSONObject("route").getJSONObject("default_domain_resolver").getString("strategy")

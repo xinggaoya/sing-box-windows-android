@@ -374,7 +374,6 @@ class ScreenshotTest : ScreenshotHarness() {
     private fun settingsState() = SettingsUiState(
         dnsStrategy = "prefer_ipv4",
         dnsCacheEnabled = true,
-        dnsIndependentCache = true,
         tunMtuInput = "9000",
         tunAutoRoute = true,
         tunStrictRoute = true,

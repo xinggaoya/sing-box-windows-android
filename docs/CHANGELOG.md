@@ -93,6 +93,33 @@
 - 页面状态改用 `collectAsStateWithLifecycle`；列表补稳定 key；
   三个新页面补齐错误提示；设置页展示内核版本
 
+### 修复：内核升级后配置格式未同步迁移（启动即失败）
+
+升级到 sing-box 1.14.4 后，旧配置使用了 1.11.0 弃用 / 1.13.0 移除的字段，
+内核直接拒绝解码：
+
+```
+start or reload service: decode config: inbounds[1]: legacy inbound fields are
+deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0
+```
+
+处理：
+
+- **模板与兜底配置**移除入站 legacy 字段（`sniff` / `sniff_override_destination` /
+  `sniff_timeout` / `domain_strategy` / `udp_disable_domain_unmapping`），
+  嗅探能力改由 `route.rules` 的 `action: sniff` 承担
+- **新增 `ConfigMigrator`**：集中迁移历史配置——
+  入站 legacy 字段、DNS `independent_cache`（1.14 弃用）、
+  legacy DNS 服务器格式（`address` → `type` + `server`）、`experimental.clash_api`；
+  已持久化在设备上的旧配置会在加载时自动升级，无需用户手动重置
+- **Clash 格式订阅转换**补齐 sniff / hijack-dns 路由动作
+- **启动前用内核自身校验配置**（`Libbox.checkConfig`），
+  配置有问题时直接把精确原因显示给用户
+- **移除已失效的「独立 DNS 缓存」设置项**（内核已移除该区分）
+- 新增 `SingBoxConfigOracleTest`：用真实 sing-box CLI 执行 `check`，
+  对模板配置、默认配置、迁移后的历史配置、Clash 转换结果做内核级校验
+  （设置 `SING_BOX_CLI` 指向可执行文件后启用，未提供时自动跳过）
+
 ### 文档
 
 - 新增 `docs/ARCHITECTURE_V3.md`，说明内核接口迁移、架构收敛与设计系统方案

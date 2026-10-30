@@ -150,13 +150,6 @@ internal fun SettingsScreenV2(
                         checked = state.dnsCacheEnabled,
                         onCheckedChange = { onIntent(SettingsIntent.ChangeDnsCacheEnabled(it)) }
                     )
-                    RowDivider()
-                    SwitchRow(
-                        title = "独立 DNS 缓存",
-                        subtitle = "与系统解析缓存互不影响",
-                        checked = state.dnsIndependentCache,
-                        onCheckedChange = { onIntent(SettingsIntent.ChangeDnsIndependentCache(it)) }
-                    )
                 }
             }
 

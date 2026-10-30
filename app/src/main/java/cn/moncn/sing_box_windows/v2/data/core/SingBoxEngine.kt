@@ -47,6 +47,19 @@ object SingBoxEngine {
         this.callbacks = callbacks
         var instance: CommandServer? = null
         return try {
+            // 先用内核自身的校验器检查配置，把精确的解码错误直接抛给用户，
+            // 而不是等到服务启动失败后只看到一句模糊的提示。
+            runCatching { Libbox.checkConfig(configJson) }
+                .onFailure { error ->
+                    Log.e(TAG, "config validation failed", error)
+                }
+                .getOrElse { error ->
+                    return CoreStartResult(
+                        ok = false,
+                        error = "配置校验失败：${error.message ?: error.javaClass.simpleName}"
+                    )
+                }
+
             instance = Libbox.newCommandServer(handler, platform)
             // 拉起本地命令服务（未配置端口时使用 basePath 下的 unix socket）
             instance.start()

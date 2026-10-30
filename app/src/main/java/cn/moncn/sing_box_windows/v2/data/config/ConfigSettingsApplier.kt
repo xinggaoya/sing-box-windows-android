@@ -17,7 +17,6 @@ object ConfigSettingsApplier {
     private fun applyDns(root: JSONObject, settings: AppSettings) {
         val dns = root.optJSONObject("dns") ?: return
         dns.put("strategy", settings.dnsStrategy)
-        dns.put("independent_cache", settings.dnsIndependentCache)
         dns.put("disable_cache", !settings.dnsCacheEnabled)
         val route = root.optJSONObject("route") ?: return
         val resolver = route.optJSONObject("default_domain_resolver") ?: return

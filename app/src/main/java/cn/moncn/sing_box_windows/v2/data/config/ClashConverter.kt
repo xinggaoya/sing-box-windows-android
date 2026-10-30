@@ -59,6 +59,10 @@ object ClashConverter {
 
         val finalOutbound = firstGroupTag ?: proxyTags.firstOrNull() ?: "DIRECT"
         val routeRules = JSONArray()
+        // sing-box 1.11 起入站不再支持 sniff 字段，改由路由动作承担，
+        // 因此转换后的配置需要显式补上 sniff / hijack-dns 动作。
+        routeRules.put(JSONObject().put("action", "sniff"))
+        routeRules.put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
         rules.forEach { rule ->
             parseRule(rule, warnings)?.let { routeRules.put(it) }
         }

@@ -24,7 +24,7 @@ object ConfigRepository {
                 return@withLock defaultJson
             }
             val raw = file.readText()
-            val migrated = migrateTunAddress(raw)
+            val migrated = ConfigMigrator.migrate(migrateTunAddress(raw))
             if (migrated != raw) {
                 writeAtomically(file, migrated)
             }
@@ -97,6 +97,8 @@ object ConfigRepository {
             var changed = false
             changed = changed or migrateTunAddress(root)
             changed = changed or ensureOutboundGroup(root)
+            // 内核格式迁移（sing-box 1.11 → 1.14）：移除已废弃的字段
+            changed = changed or ConfigMigrator.migrate(root)
             if (changed) root.toString(2) else json
         }.getOrElse { json }
     }
