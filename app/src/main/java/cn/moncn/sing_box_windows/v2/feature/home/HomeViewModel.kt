@@ -7,7 +7,10 @@ import cn.moncn.sing_box_windows.v2.core.arch.MviViewModel
 import cn.moncn.sing_box_windows.v2.data.core.ProcessMemory
 import cn.moncn.sing_box_windows.v2.domain.core.MemorySnapshot
 import cn.moncn.sing_box_windows.v2.domain.runtime.RuntimeGateway
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class HomeViewModel(
@@ -57,6 +60,8 @@ class HomeViewModel(
     }
 
     private fun observeRuntime() {
+        observeProcessMemory()
+
         viewModelScope.launch {
             runtimeGateway.vpnStateFlow.collectLatest { vpnState ->
                 updateState { current ->
@@ -69,13 +74,7 @@ class HomeViewModel(
 
         viewModelScope.launch {
             runtimeGateway.coreStatusFlow.collectLatest { status ->
-                updateState { current ->
-                    current.copy(
-                        coreStatus = status,
-                        // 与状态推送同频（1 次/秒）采样，避免高频读 /proc
-                        memory = ProcessMemory.snapshot()
-                    )
-                }
+                updateState { current -> current.copy(coreStatus = status) }
             }
         }
 
@@ -107,6 +106,22 @@ class HomeViewModel(
                         lastError = error
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * 采样进程内存分解。
+     *
+     * 读取 `/proc/self/ 下的 statm 与 smaps_rollup` 是阻塞操作，且 `smaps_rollup` 需要遍历进程页表，
+     * 必须在 IO 线程执行并降低频率，否则会拖垮主线程造成卡顿。
+     */
+    private fun observeProcessMemory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val snapshot = ProcessMemory.snapshot(includePss = true)
+                updateState { current -> current.copy(memory = snapshot) }
+                delay(MEMORY_SAMPLE_INTERVAL_MS)
             }
         }
     }
@@ -143,6 +158,9 @@ class HomeViewModel(
     }
 
     companion object {
+        /** 内存指标采样间隔（毫秒）：读 /proc 较慢，5 秒足够观察趋势 */
+        private const val MEMORY_SAMPLE_INTERVAL_MS = 5_000L
+
         fun factory(runtimeGateway: RuntimeGateway): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

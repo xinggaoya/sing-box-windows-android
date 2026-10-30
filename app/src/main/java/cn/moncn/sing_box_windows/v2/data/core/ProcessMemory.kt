@@ -46,13 +46,19 @@ object ProcessMemory {
     /** 按比例分摊后的总占用（KB），与系统「内存占用」统计口径一致 */
     fun pssKb(): Long = readLongField("/proc/self/smaps_rollup", "Pss:", 1)
 
-    /** 一次性采集全部内存指标 */
-    fun snapshot(): MemorySnapshot = MemorySnapshot(
+    /**
+     * 一次性采集内存指标。
+     *
+     * @param includePss 是否采集 PSS。读取 `/proc/self/smaps_rollup` 需要遍历整个
+     *   进程的页表，开销远高于其余指标，**必须放在后台线程并降低频率**，
+     *   否则会造成界面卡顿。
+     */
+    fun snapshot(includePss: Boolean = false): MemorySnapshot = MemorySnapshot(
         rssBytes = rssBytes(),
         javaHeapUsedBytes = javaHeapUsed(),
         javaHeapCommittedBytes = javaHeapCommitted(),
         nativeHeapBytes = nativeHeap(),
-        pssKb = pssKb()
+        pssKb = if (includePss) pssKb() else 0L
     )
 
     /**

@@ -197,7 +197,7 @@ class DefaultCoreGateway : CoreGateway {
             runCatching {
                 val options = CommandClientOptions().apply {
                     commands.forEach { addCommand(it) }
-                    statusInterval = STATUS_INTERVAL_MS
+                    statusInterval = STATUS_INTERVAL_NS
                 }
                 Libbox.newCommandClient(handler, options).also { it.connect() }
             }
@@ -449,8 +449,15 @@ class DefaultCoreGateway : CoreGateway {
     companion object {
         private const val TAG = "DefaultCoreGateway"
 
-        /** 状态推送间隔（毫秒） */
-        private const val STATUS_INTERVAL_MS = 1000L
+        /**
+         * 状态推送间隔，**单位纳秒**。
+         *
+         * 上游 `daemon.SubscribeStatusRequest.Interval` 是 `time.Duration`（纳秒），
+         * 传 1000 会被解释为 1 微秒，导致内核以每秒百万次的频率推送状态与连接快照，
+         * 造成巨量分配（进程 RSS 持续上涨）并让界面卡顿。
+         * 正确取值：1 秒 = 1_000_000_000 纳秒。
+         */
+        private const val STATUS_INTERVAL_NS = 1_000_000_000L
 
         /** 本地保留的最大日志条数 */
         private const val MAX_LOG_ENTRIES = 500
