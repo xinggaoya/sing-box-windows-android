@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import cn.moncn.sing_box_windows.v2.data.core.CoreInfoStore
+import cn.moncn.sing_box_windows.v2.data.settings.ThemeStore
 import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
 import cn.moncn.sing_box_windows.v2.core.arch.MviViewModel
@@ -19,6 +20,8 @@ class SettingsViewModel(
         observeUpdateState()
         // 内核版本直接取自 libbox，无需网络请求
         updateState { current -> current.copy(kernelVersion = CoreInfoStore.refresh()) }
+        // 外观模式属于 UI 偏好，直接读取当前生效值
+        updateState { current -> current.copy(themeMode = ThemeStore.themeMode.value) }
         submitIntent(SettingsIntent.Load)
     }
 
@@ -34,6 +37,12 @@ class SettingsViewModel(
             is SettingsIntent.ChangeTunAutoRoute -> updateState { it.copy(tunAutoRoute = intent.value) }
             is SettingsIntent.ChangeTunStrictRoute -> updateState { it.copy(tunStrictRoute = intent.value) }
             is SettingsIntent.ChangeHttpProxyEnabled -> updateState { it.copy(httpProxyEnabled = intent.value) }
+            is SettingsIntent.ChangeThemeMode -> {
+                // 立即生效：主题令牌由 Activity 收集 ThemeStore 的状态流驱动重绘
+                ThemeStore.setMode(intent.mode)
+                updateState { it.copy(themeMode = intent.mode) }
+            }
+
             SettingsIntent.Save -> save()
             SettingsIntent.CheckUpdate -> gateway.checkUpdate(manual = true)
             SettingsIntent.DownloadUpdate -> downloadUpdate()

@@ -16,3 +16,4 @@ local.properties
 .tools
 /app/release
 nul
+.kotlin

@@ -4,6 +4,7 @@ import cn.moncn.sing_box_windows.v2.domain.settings.AppSettingsDefaults
 import cn.moncn.sing_box_windows.v2.domain.update.UpdateState
 import cn.moncn.sing_box_windows.v2.core.arch.UiIntent
 import cn.moncn.sing_box_windows.v2.core.arch.UiState
+import cn.moncn.sing_box_windows.ui.theme.ThemeMode
 
 data class SettingsUiState(
     val dnsStrategy: String = AppSettingsDefaults.DNS_STRATEGY,
@@ -14,6 +15,8 @@ data class SettingsUiState(
     val tunStrictRoute: Boolean = AppSettingsDefaults.TUN_STRICT_ROUTE,
     val httpProxyEnabled: Boolean = AppSettingsDefaults.HTTP_PROXY_ENABLED,
     val clashMode: String = AppSettingsDefaults.CLASH_MODE,
+    /** 外观：跟随系统 / 浅色 / 深色（立即生效，不参与内核配置保存） */
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val updateState: UpdateState = UpdateState.Idle,
@@ -32,6 +35,7 @@ sealed interface SettingsIntent : UiIntent {
     data class ChangeTunAutoRoute(val value: Boolean) : SettingsIntent
     data class ChangeTunStrictRoute(val value: Boolean) : SettingsIntent
     data class ChangeHttpProxyEnabled(val value: Boolean) : SettingsIntent
+    data class ChangeThemeMode(val mode: ThemeMode) : SettingsIntent
     data object Save : SettingsIntent
     data object CheckUpdate : SettingsIntent
     data object DownloadUpdate : SettingsIntent

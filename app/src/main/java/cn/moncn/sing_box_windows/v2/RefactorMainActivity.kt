@@ -4,28 +4,35 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.moncn.sing_box_windows.v2.data.update.UpdateManager
 import cn.moncn.sing_box_windows.v2.data.core.LibboxBootstrap
+import cn.moncn.sing_box_windows.v2.data.settings.ThemeStore
 import cn.moncn.sing_box_windows.v2.data.update.UpdateStore
 import cn.moncn.sing_box_windows.ui.theme.SingboxwindowsTheme
 import cn.moncn.sing_box_windows.v2.app.V2AppRoot
 import cn.moncn.sing_box_windows.v2.core.di.V2Container
 
 /**
- * v2 重构入口（M1 样板）。
- * 先独立并行开发，避免与旧页面相互影响。
+ * v2 重构入口。
+ *
+ * 主题模式在此处统一接管：主题偏好来自 [ThemeStore]，
+ * 用户在设置页切换后立即生效，无需重启应用。
  */
 class RefactorMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LibboxBootstrap.initialize(this)
         UpdateStore.init(this)
+        ThemeStore.init(this)
         enableEdgeToEdge()
 
         setContent {
-            SingboxwindowsTheme {
+            val themeMode by ThemeStore.themeMode.collectAsStateWithLifecycle()
+            SingboxwindowsTheme(themeMode = themeMode) {
                 val appContext = LocalContext.current.applicationContext
                 val graph = remember(appContext) {
                     V2Container.provideGraph(appContext)

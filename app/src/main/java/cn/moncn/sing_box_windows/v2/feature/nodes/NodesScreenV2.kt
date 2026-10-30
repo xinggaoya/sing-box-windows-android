@@ -10,45 +10,47 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cn.moncn.sing_box_windows.ui.components.AppAlertDialog
+import cn.moncn.sing_box_windows.ui.components.AppBackground
+import cn.moncn.sing_box_windows.ui.components.AppPageArrangement
+import cn.moncn.sing_box_windows.ui.components.AppSectionCard
+import cn.moncn.sing_box_windows.ui.components.AppTopBar
 import cn.moncn.sing_box_windows.ui.components.EmptyState
-import cn.moncn.sing_box_windows.ui.components.SectionCardWithHeader
+import cn.moncn.sing_box_windows.ui.components.IconActionButton
+import cn.moncn.sing_box_windows.ui.components.SelectionIndicator
 import cn.moncn.sing_box_windows.ui.components.StatusChip
 import cn.moncn.sing_box_windows.ui.components.StatusTone
+import cn.moncn.sing_box_windows.ui.components.appPagePadding
 import cn.moncn.sing_box_windows.ui.theme.AppRadius
 import cn.moncn.sing_box_windows.ui.theme.AppSpace
-import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
+import cn.moncn.sing_box_windows.ui.theme.LocalAppColors
 import cn.moncn.sing_box_windows.v2.domain.core.OutboundGroup
 import cn.moncn.sing_box_windows.v2.domain.core.OutboundGroupItem
 import cn.moncn.sing_box_windows.v2.domain.nodes.NodesGateway
@@ -61,15 +63,13 @@ fun NodesRouteV2(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     if (!state.error.isNullOrBlank()) {
-        AlertDialog(
+        AppAlertDialog(
+            title = "节点操作失败",
+            message = state.error,
+            confirmText = "知道了",
+            dismissText = null,
             onDismissRequest = { viewModel.submitIntent(NodesIntent.ClearError) },
-            title = { Text("节点操作失败") },
-            text = { Text(state.error.orEmpty()) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.submitIntent(NodesIntent.ClearError) }) {
-                    Text("知道了")
-                }
-            }
+            onConfirm = { viewModel.submitIntent(NodesIntent.ClearError) }
         )
     }
 
@@ -81,85 +81,55 @@ fun NodesRouteV2(
 }
 
 @Composable
-private fun NodesScreenV2(
+internal fun NodesScreenV2(
     state: NodesUiState,
     onSelect: (String, String) -> Unit,
-    onTest: (String) -> Unit
+    onTest: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val tokens = LocalIndigoTokens.current
     val expandedMap = remember { mutableStateMapOf<String, Boolean>() }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    listOf(tokens.bgBase, tokens.bgSurface2, tokens.bgBase)
-                )
-            )
-    ) {
-        if (state.groups.isEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = AppSpace.xl, vertical = AppSpace.xl)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(AppSpace.xs)) {
-                    Text(
-                        text = "代理",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.textPrimary
-                    )
-                    Text(
-                        text = "分组选择、节点切换与延迟测试",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tokens.textTertiary
-                    )
-                }
-                EmptyState(
-                    icon = Icons.Rounded.Dns,
-                    title = "暂无代理组",
-                    description = "连接内核后会自动加载代理组与节点",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            return
-        }
-
+    AppBackground(glow = true) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                horizontal = AppSpace.xl,
-                vertical = AppSpace.xl
-            ),
-            verticalArrangement = Arrangement.spacedBy(AppSpace.md)
+            modifier = modifier.fillMaxSize(),
+            contentPadding = appPagePadding(),
+            verticalArrangement = AppPageArrangement
         ) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(AppSpace.xs)) {
-                    Text(
-                        text = "代理",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.textPrimary
-                    )
-                    Text(
-                        text = "${state.groups.size} 个代理组 · ${state.groups.sumOf { it.items.size }} 个节点",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tokens.textTertiary
-                    )
-                }
+            item(key = "header") {
+                AppTopBar(
+                    title = "代理",
+                    subtitle = if (state.groups.isEmpty()) {
+                        "分组选择、节点切换与延迟测试"
+                    } else {
+                        "${state.groups.size} 个代理组 · ${state.groups.sumOf { it.items.size }} 个节点"
+                    }
+                )
             }
 
-            items(state.groups, key = { it.tag }) { group ->
-                val expanded = expandedMap[group.tag] ?: false
-                GroupCard(
-                    group = group,
-                    expanded = expanded,
-                    onToggle = { expandedMap[group.tag] = !expanded },
-                    onSelect = onSelect,
-                    onTest = onTest
-                )
+            if (state.groups.isEmpty()) {
+                item(key = "empty") {
+                    EmptyState(
+                        icon = Icons.Rounded.Dns,
+                        title = "暂无代理组",
+                        description = "连接内核后会自动加载代理组与节点",
+                        modifier = Modifier.fillParentMaxHeight(0.7f)
+                    )
+                }
+            } else {
+                items(
+                    count = state.groups.size,
+                    key = { index -> state.groups[index].tag }
+                ) { index ->
+                    val group = state.groups[index]
+                    val expanded = expandedMap[group.tag] ?: false
+                    GroupCard(
+                        group = group,
+                        expanded = expanded,
+                        onToggle = { expandedMap[group.tag] = !expanded },
+                        onSelect = onSelect,
+                        onTest = onTest
+                    )
+                }
             }
         }
     }
@@ -173,8 +143,8 @@ private fun GroupCard(
     onSelect: (String, String) -> Unit,
     onTest: (String) -> Unit
 ) {
-    val tokens = LocalIndigoTokens.current
-    SectionCardWithHeader(
+    val colors = LocalAppColors.current
+    AppSectionCard(
         title = group.tag,
         subtitle = "${group.type} · ${group.items.size} 节点",
         trailing = {
@@ -186,9 +156,10 @@ private fun GroupCard(
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
                     contentDescription = if (expanded) "收起" else "展开",
-                    tint = tokens.textTertiary,
+                    tint = colors.textTertiary,
                     modifier = Modifier
                         .padding(start = AppSpace.sm)
+                        .size(22.dp)
                         .rotate(if (expanded) 180f else 0f)
                 )
             }
@@ -197,13 +168,22 @@ private fun GroupCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onToggle() },
-            verticalAlignment = Alignment.CenterVertically
+                .clip(RoundedCornerShape(AppRadius.sm))
+                .background(colors.surfaceMuted)
+                .clickable { onToggle() }
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = if (expanded) "收起节点列表" else "展开节点列表",
                 style = MaterialTheme.typography.labelMedium,
-                color = tokens.primary
+                color = colors.primary
+            )
+            Text(
+                text = "${group.items.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textTertiary
             )
         }
 
@@ -237,37 +217,41 @@ private fun NodeRow(
     onSelect: (String, String) -> Unit,
     onTest: (String) -> Unit
 ) {
-    val tokens = LocalIndigoTokens.current
+    val colors = LocalAppColors.current
+    val shape = RoundedCornerShape(AppRadius.md)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppRadius.md))
-            .background(if (selected) tokens.primarySoft else tokens.bgSurface2)
-            .clickable(enabled = selectable && !selected) { onSelect(groupTag, node.tag) }
-            .padding(horizontal = AppSpace.md, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .background(if (selected) colors.primaryContainer else colors.surfaceMuted, shape)
+            .clickable(enabled = selectable) { onSelect(groupTag, node.tag) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpace.md)
     ) {
+        SelectionIndicator(selected = selected)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = node.tag,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) tokens.primary else tokens.textPrimary
+                color = if (selected) colors.onPrimaryContainer else colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "${node.type} · ${formatDelay(node.urlTestDelay)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = tokens.textTertiary
+                color = if (selected) colors.onPrimaryContainer else colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        IconButton(onClick = { onTest(node.tag) }) {
-            Icon(
-                imageVector = Icons.Rounded.Speed,
-                contentDescription = "测速",
-                tint = tokens.primary
-            )
-        }
+        IconActionButton(
+            icon = Icons.Rounded.Speed,
+            contentDescription = "测速",
+            onClick = { onTest(node.tag) },
+            tint = colors.primary
+        )
     }
 }
 

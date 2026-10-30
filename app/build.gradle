@@ -56,6 +56,13 @@ android {
         compose true
     }
 
+    // 单元测试需要读取并渲染 Android 资源（Robolectric 图形模式）
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
     splits {
         abi {
             enable true
@@ -95,6 +102,10 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3"
     testImplementation libs.junit
     testImplementation libs.json
+    // JVM 端渲染 Compose 界面并截图（无需真机 / 模拟器）
+    testImplementation "org.robolectric:robolectric:4.16.1"
+    testImplementation "androidx.compose.ui:ui-test-junit4"
+    testImplementation "androidx.compose.ui:ui-test-manifest"
     androidTestImplementation libs.androidx.junit
     androidTestImplementation libs.androidx.espresso.core
     androidTestImplementation platform(libs.androidx.compose.bom)

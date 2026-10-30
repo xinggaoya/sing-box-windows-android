@@ -1,63 +1,60 @@
 package cn.moncn.sing_box_windows.v2.feature.subscription
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.RssFeed
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import cn.moncn.sing_box_windows.ui.theme.AppSpace
-import cn.moncn.sing_box_windows.ui.theme.LocalIndigoTokens
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionItem
+import cn.moncn.sing_box_windows.ui.Format
+import cn.moncn.sing_box_windows.ui.components.AppAlertDialog
+import cn.moncn.sing_box_windows.ui.components.AppBackground
+import cn.moncn.sing_box_windows.ui.components.AppCard
+import cn.moncn.sing_box_windows.ui.components.AppInlineBanner
+import cn.moncn.sing_box_windows.ui.components.AppPageArrangement
+import cn.moncn.sing_box_windows.ui.components.AppSegmentedControl
+import cn.moncn.sing_box_windows.ui.components.AppTextField
+import cn.moncn.sing_box_windows.ui.components.AppTopBar
+import cn.moncn.sing_box_windows.ui.components.DialogTone
+import cn.moncn.sing_box_windows.ui.components.EmptyState
+import cn.moncn.sing_box_windows.ui.components.IconActionButton
+import cn.moncn.sing_box_windows.ui.components.StatusChip
+import cn.moncn.sing_box_windows.ui.components.StatusTone
+import cn.moncn.sing_box_windows.ui.components.TertiaryButton
+import cn.moncn.sing_box_windows.ui.components.appPagePadding
+import cn.moncn.sing_box_windows.ui.theme.AppSpace
+import cn.moncn.sing_box_windows.ui.theme.LocalAppColors
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionGateway
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionItem
 
-private enum class AddMode {
-    Remote, Local
+private enum class AddMode(val label: String) {
+    Remote("远程订阅"),
+    Local("本地导入")
 }
 
 @Composable
@@ -71,30 +68,16 @@ fun SubscriptionRouteV2(
 
     var adding by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<SubscriptionItem?>(null) }
+    var pendingRemoval by remember { mutableStateOf<SubscriptionItem?>(null) }
 
     if (!state.error.isNullOrBlank()) {
-        AlertDialog(
+        AppAlertDialog(
+            title = "操作失败",
+            message = state.error,
+            confirmText = "知道了",
+            dismissText = null,
             onDismissRequest = { viewModel.submitIntent(SubscriptionIntent.ClearError) },
-            title = { Text("操作失败") },
-            text = { Text(state.error.orEmpty()) },
-            confirmButton = {
-                Button(onClick = { viewModel.submitIntent(SubscriptionIntent.ClearError) }) {
-                    Text("知道了")
-                }
-            }
-        )
-    }
-
-    if (!state.message.isNullOrBlank()) {
-        AlertDialog(
-            onDismissRequest = { viewModel.submitIntent(SubscriptionIntent.ClearMessage) },
-            title = { Text("结果") },
-            text = { Text(state.message.orEmpty()) },
-            confirmButton = {
-                Button(onClick = { viewModel.submitIntent(SubscriptionIntent.ClearMessage) }) {
-                    Text("确定")
-                }
-            }
+            onConfirm = { viewModel.submitIntent(SubscriptionIntent.ClearError) }
         )
     }
 
@@ -123,75 +106,110 @@ fun SubscriptionRouteV2(
         )
     }
 
+    pendingRemoval?.let { item ->
+        AppAlertDialog(
+            title = "删除订阅",
+            message = "确定删除「${item.name.ifBlank { "未命名订阅" }}」吗？该操作不可撤销。",
+            confirmText = "删除",
+            dismissText = "取消",
+            tone = DialogTone.DANGER,
+            onDismissRequest = { pendingRemoval = null },
+            onConfirm = {
+                pendingRemoval = null
+                viewModel.submitIntent(SubscriptionIntent.Remove(item.id))
+            }
+        )
+    }
+
     SubscriptionScreenV2(
         state = state,
         onAddClick = { adding = true },
         onActivate = { viewModel.submitIntent(SubscriptionIntent.Activate(it)) },
         onSync = { viewModel.submitIntent(SubscriptionIntent.Sync(it)) },
         onEdit = { editingItem = it },
-        onDelete = { viewModel.submitIntent(SubscriptionIntent.Remove(it)) }
+        onDelete = { item -> pendingRemoval = item },
+        onClearMessage = { viewModel.submitIntent(SubscriptionIntent.ClearMessage) }
     )
 }
 
 @Composable
-private fun SubscriptionScreenV2(
+internal fun SubscriptionScreenV2(
     state: SubscriptionUiState,
     onAddClick: () -> Unit,
     onActivate: (String) -> Unit,
     onSync: (String) -> Unit,
     onEdit: (SubscriptionItem) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (SubscriptionItem) -> Unit,
+    onClearMessage: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val tokens = LocalIndigoTokens.current
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = onAddClick) {
-                Icon(Icons.Rounded.Add, contentDescription = "添加订阅")
-            }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    brush = Brush.verticalGradient(
-                        listOf(tokens.bgBase, tokens.bgSurface2, tokens.bgBase)
-                    )
-                )
-                .padding(innerPadding)
+    val colors = LocalAppColors.current
+    val items = state.subscriptions.items
+
+    AppBackground(glow = true) {
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = appPagePadding(),
+            verticalArrangement = AppPageArrangement
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = AppSpace.xl, vertical = AppSpace.xl),
-                verticalArrangement = Arrangement.spacedBy(AppSpace.md)
-            ) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "订阅中心",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold
+            item(key = "header") {
+                AppTopBar(
+                    title = "订阅",
+                    subtitle = if (items.isEmpty()) {
+                        "统一管理订阅、同步与启用"
+                    } else {
+                        "${items.size} 个订阅 · 当前使用 ${activeSubscriptionName(state, items)}"
+                    },
+                    actions = {
+                        IconActionButton(
+                            icon = Icons.Rounded.Add,
+                            contentDescription = "添加订阅",
+                            onClick = onAddClick,
+                            tint = colors.primary
                         )
-                        Text(
-                            text = "统一管理订阅、同步与启用",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = scheme.onSurfaceVariant
+                    }
+                )
+            }
+
+            if (!state.message.isNullOrBlank()) {
+                item(key = "message") {
+                    AppInlineBanner(
+                        message = state.message.orEmpty(),
+                        // 结果文案可能同时包含成功与提示性信息，统一使用中性信息色避免误判
+                        tone = StatusTone.INFO,
+                        onDismiss = onClearMessage
+                    )
+                }
+            }
+
+            if (items.isEmpty() && state.isLoading) {
+                item(key = "loading") {
+                    Box(
+                        modifier = Modifier.fillParentMaxHeight(0.6f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.primary
                         )
                     }
                 }
-
-                if (state.subscriptions.items.isEmpty() && !state.isLoading) {
-                    item {
-                        Text(
-                            text = "暂无订阅，点击右下角按钮添加。",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = scheme.onSurfaceVariant
-                        )
-                    }
+            } else if (items.isEmpty()) {
+                item(key = "empty") {
+                    EmptyState(
+                        icon = Icons.Rounded.RssFeed,
+                        title = "暂无订阅",
+                        description = "点击右上角的加号添加远程订阅，或导入本地节点列表",
+                        modifier = Modifier.fillParentMaxHeight(0.7f)
+                    )
                 }
-
-                items(state.subscriptions.items, key = { it.id }) { item ->
+            } else {
+                items(
+                    count = items.size,
+                    key = { index -> items[index].id }
+                ) { index ->
+                    val item = items[index]
                     SubscriptionItemCard(
                         item = item,
                         selected = state.subscriptions.selectedId == item.id,
@@ -202,11 +220,19 @@ private fun SubscriptionScreenV2(
                         onDelete = onDelete
                     )
                 }
-
-                item { Spacer(modifier = Modifier.height(84.dp)) }
             }
         }
     }
+}
+
+/** 当前生效订阅的名称，未选中时显示「无」。 */
+private fun activeSubscriptionName(
+    state: SubscriptionUiState,
+    items: List<SubscriptionItem>
+): String {
+    val selectedId = state.subscriptions.selectedId ?: return "无"
+    val item = items.firstOrNull { it.id == selectedId } ?: return "无"
+    return item.name.ifBlank { "未命名订阅" }
 }
 
 @Composable
@@ -217,110 +243,93 @@ private fun SubscriptionItemCard(
     onActivate: (String) -> Unit,
     onSync: (String) -> Unit,
     onEdit: (SubscriptionItem) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (SubscriptionItem) -> Unit
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !selected) { onActivate(item.id) },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                scheme.primaryContainer.copy(alpha = 0.45f)
-            } else {
-                scheme.surface.copy(alpha = 0.94f)
-            }
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    val colors = LocalAppColors.current
+    AppCard(selected = selected) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpace.md),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.name.ifBlank { "未命名订阅" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = if (item.isLocal) "本地节点列表" else item.url,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (selected) {
-                    Icon(
-                        imageVector = Icons.Rounded.Done,
-                        contentDescription = "已选中",
-                        tint = scheme.primary
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val syncText = item.lastUpdatedAt?.let {
-                    "上次更新: ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(it))}"
-                } ?: "尚未同步"
+            androidx.compose.material3.Icon(
+                imageVector = if (item.isLocal) Icons.Rounded.FolderOpen else Icons.Rounded.RssFeed,
+                contentDescription = null,
+                tint = if (selected) colors.primary else colors.textSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = syncText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant
+                    text = item.name.ifBlank { "未命名订阅" },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (!item.lastError.isNullOrBlank()) {
-                    Text(
-                        text = "上次失败",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.error
-                    )
-                }
+                Text(
+                    text = if (item.isLocal) "本地节点列表" else item.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+            StatusChip(
+                text = if (selected) "使用中" else "未启用",
+                // 选中卡片本身就是品牌色底，若胶囊也用品牌色会与卡片糊在一起，
+                // 这里改用「生效中」的语义色，既贴合含义又保证可读。
+                tone = if (selected) StatusTone.SUCCESS else StatusTone.NEUTRAL
+            )
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row {
-                    IconButton(
-                        onClick = { onSync(item.id) },
-                        enabled = !updating
-                    ) {
-                        Icon(Icons.Rounded.Sync, contentDescription = "同步")
-                    }
-                    IconButton(
-                        onClick = { onEdit(item) },
-                        enabled = !updating
-                    ) {
-                        Icon(Icons.Rounded.Edit, contentDescription = "编辑")
-                    }
-                    IconButton(
-                        onClick = { onDelete(item.id) },
-                        enabled = !updating
-                    ) {
-                        Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = scheme.error)
-                    }
-                }
-                if (!selected) {
-                    TextButton(
-                        onClick = { onActivate(item.id) },
-                        enabled = !updating
-                    ) {
-                        Text("启用")
-                    }
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val syncText = item.lastUpdatedAt?.let {
+                "上次更新 ${Format.timestamp(it)}"
+            } ?: "尚未同步"
+            Text(
+                text = syncText,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary
+            )
+            if (!item.lastError.isNullOrBlank()) {
+                StatusChip(text = "上次同步失败", tone = StatusTone.ERROR)
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpace.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TertiaryButton(
+                text = "同步",
+                icon = Icons.Rounded.Sync,
+                onClick = { onSync(item.id) },
+                enabled = !updating
+            )
+            TertiaryButton(
+                text = "编辑",
+                icon = Icons.Rounded.Edit,
+                onClick = { onEdit(item) },
+                enabled = !updating
+            )
+            TertiaryButton(
+                text = "删除",
+                icon = Icons.Rounded.Delete,
+                onClick = { onDelete(item) },
+                enabled = !updating,
+                tint = colors.error.content
+            )
+            if (!selected) {
+                TertiaryButton(
+                    text = "启用",
+                    onClick = { onActivate(item.id) },
+                    enabled = !updating
+                )
             }
         }
     }
@@ -337,61 +346,53 @@ private fun AddSubscriptionDialog(
     var localContent by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(AddMode.Remote) }
 
-    AlertDialog(
+    AppAlertDialog(
+        title = "添加订阅",
         onDismissRequest = onDismiss,
-        title = { Text("添加订阅") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { mode = AddMode.Remote }) {
-                        Text(if (mode == AddMode.Remote) "远程订阅 ✓" else "远程订阅")
-                    }
-                    TextButton(onClick = { mode = AddMode.Local }) {
-                        Text(if (mode == AddMode.Local) "本地导入 ✓" else "本地导入")
-                    }
-                }
-                OutlinedTextField(
+        onConfirm = {
+            if (mode == AddMode.Remote) {
+                onAddRemote(name, remoteUrl)
+            } else {
+                onAddLocal(name, localContent)
+            }
+        },
+        confirmText = "添加",
+        dismissText = "取消",
+        confirmEnabled = if (mode == AddMode.Remote) remoteUrl.isNotBlank() else localContent.isNotBlank(),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpace.md)) {
+                AppSegmentedControl(
+                    options = AddMode.entries.toList(),
+                    selected = mode,
+                    onSelect = { mode = it },
+                    label = { it.label }
+                )
+                AppTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("名称（可选）") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = "名称（可选）"
                 )
                 if (mode == AddMode.Remote) {
-                    OutlinedTextField(
+                    AppTextField(
                         value = remoteUrl,
                         onValueChange = { remoteUrl = it },
-                        label = { Text("订阅 URL") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "订阅 URL",
+                        placeholder = "https://example.com/sub"
                     )
                 } else {
-                    OutlinedTextField(
+                    AppTextField(
                         value = localContent,
                         onValueChange = { localContent = it },
-                        label = { Text("节点内容") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp)
+                        label = "节点内容",
+                        placeholder = "粘贴 Clash / sing-box 节点内容",
+                        singleLine = false
+                    )
+                    Text(
+                        text = "粘贴 Clash 或 sing-box 格式的节点内容",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalAppColors.current.textTertiary
                     )
                 }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (mode == AddMode.Remote) {
-                        onAddRemote(name, remoteUrl)
-                    } else {
-                        onAddLocal(name, localContent)
-                    }
-                },
-                enabled = if (mode == AddMode.Remote) remoteUrl.isNotBlank() else localContent.isNotBlank()
-            ) {
-                Text("添加")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
             }
         }
     )
@@ -406,34 +407,25 @@ private fun EditSubscriptionDialog(
     var name by remember(item.id) { mutableStateOf(item.name) }
     var url by remember(item.id) { mutableStateOf(item.url) }
 
-    AlertDialog(
+    AppAlertDialog(
+        title = "编辑订阅",
         onDismissRequest = onDismiss,
-        title = { Text("编辑订阅") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+        onConfirm = { onSave(name, url) },
+        confirmText = "保存",
+        dismissText = "取消",
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpace.md)) {
+                AppTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("名称") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = "名称"
                 )
-                OutlinedTextField(
+                AppTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("地址") },
-                    enabled = !item.isLocal,
-                    modifier = Modifier.fillMaxWidth()
+                    label = "地址",
+                    enabled = !item.isLocal
                 )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(name, url) }) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
             }
         }
     )

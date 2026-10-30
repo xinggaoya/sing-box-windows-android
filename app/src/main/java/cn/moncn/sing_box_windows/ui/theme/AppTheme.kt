@@ -16,16 +16,29 @@ import androidx.core.view.WindowCompat
 /**
  * 应用主题入口。
  *
- * 默认采用 Indigo 语义令牌（与桌面端一致），
- * [dynamicColor] 开启时回退到 Android 12+ 动态取色。
+ * 视觉体系的核心原则：**语义令牌是唯一事实来源**。
+ * - [AppColors] 定义全部色彩语义；
+ * - Material3 的 `colorScheme` 由 [AppColors.toColorScheme] 派生，
+ *   使得 Switch / Dialog / TextField 等原生组件与自定义组件天然同色；
+ * - [LocalAppColors] 向下透传品牌渐变、状态色组等扩展令牌。
+ *
+ * @param themeMode 用户选择的模式，默认跟随系统。
+ * @param dynamicColor 是否启用 Android 12+ 动态取色（会牺牲品牌一致性，默认关闭）。
  */
 @Composable
 fun SingboxwindowsTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val tokens = if (darkTheme) IndigoTokens.Dark else IndigoTokens.Light
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> systemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+    val appColors = if (darkTheme) AppColors.Dark else AppColors.Light
 
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -33,8 +46,7 @@ fun SingboxwindowsTheme(
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
 
-        darkTheme -> indigoDarkColorScheme(tokens)
-        else -> indigoLightColorScheme(tokens)
+        else -> appColors.toColorScheme()
     }
 
     val view = LocalView.current
@@ -47,11 +59,11 @@ fun SingboxwindowsTheme(
         }
     }
 
-    CompositionLocalProvider(LocalIndigoTokens provides tokens) {
+    CompositionLocalProvider(LocalAppColors provides appColors) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = IndigoTypography,
-            shapes = IndigoShapes,
+            typography = AppTypography,
+            shapes = AppShapes,
             content = content
         )
     }

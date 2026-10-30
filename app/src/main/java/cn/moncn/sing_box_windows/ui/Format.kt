@@ -1,5 +1,7 @@
 package cn.moncn.sing_box_windows.ui
 
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.ln
 import kotlin.math.pow
@@ -37,4 +39,15 @@ object Format {
 
     /** 内存字节数 → 可读文本 */
     fun memory(bytes: Long): String = bytes(bytes)
+
+    /**
+     * 毫秒时间戳 → 可读日期时间（MM-dd HH:mm）。
+     *
+     * 内核返回的测速时间、订阅同步时间等均为原始时间戳，
+     * 直接展示既难读也无法比对，统一在此转换为本地时间文本。
+     */
+    fun timestamp(millis: Long): String {
+        if (millis <= 0L) return "-"
+        return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
+    }
 }
