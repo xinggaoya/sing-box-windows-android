@@ -12,6 +12,7 @@
             <intent-filter>
                 <action android:name="cn.moncn.sing_box_windows.DIAG_CONNECT" />
                 <action android:name="cn.moncn.sing_box_windows.DIAG_DISCONNECT" />
+                <action android:name="cn.moncn.sing_box_windows.DIAG_DUMP_LOGS" />
                 <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_ONESHOT" />
                 <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_START" />
                 <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_STOP" />

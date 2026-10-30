@@ -221,21 +221,46 @@ class AppVpnService : android.net.VpnService() {
             .setMtu(options.mtu)
 
         var addressCount = 0
-        addressCount += addAddresses(builder, options.inet4Address)
+        var tunInet4Address: String? = null
+        var tunInet4Prefix = VpnDefaults.PREFIX
+        val inet4 = options.inet4Address
+        while (inet4.hasNext()) {
+            val prefix = inet4.next()
+            builder.addAddress(prefix.address(), prefix.prefix())
+            addressCount++
+            if (tunInet4Address == null) {
+                tunInet4Address = prefix.address()
+                tunInet4Prefix = prefix.prefix()
+            }
+        }
         addressCount += addAddresses(builder, options.inet6Address)
         if (addressCount == 0) {
             builder.addAddress(VpnDefaults.ADDRESS, VpnDefaults.PREFIX)
+            tunInet4Address = VpnDefaults.ADDRESS
+            tunInet4Prefix = VpnDefaults.PREFIX
         }
 
-        // sing-box 1.14 起 TunOptions.dnsServerAddress 为字符串迭代器
-        val dnsAddress = runCatching {
+        // DNS 服务器地址：内核按「TUN 地址 + 1」派生，对 /30 前缀恰好落在子网广播地址上，
+        // 而 Linux 会丢弃发往广播地址的报文 —— 系统 DNS 查询根本进不了 TUN，
+        // 表现为 WiFi「无网络」感叹号、所有应用无法联网、域名分流全部失效。
+        // 这里基于实际下发的 TUN 地址重新推导一个可用的主机地址。
+        val suggestedDns = runCatching {
             val iterator = options.getDNSServerAddress()
-            if (iterator.hasNext()) iterator.next() else null
+            val candidates = mutableListOf<String>()
+            while (iterator.hasNext()) {
+                candidates.add(iterator.next())
+            }
+            // 优先选 IPv4 地址：IPv6 在多数移动网络下不可用
+            candidates.firstOrNull { TunAddressPlan.parseIpv4(it) != null }
+                ?: candidates.firstOrNull()
         }.getOrNull()
-        if (!dnsAddress.isNullOrBlank()) {
-            builder.addDnsServer(dnsAddress)
-        } else {
-            builder.addDnsServer(VpnDefaults.DNS)
+        val dnsPlan = TunAddressPlan.resolveDnsAddress(tunInet4Address, tunInet4Prefix, suggestedDns)
+        val dnsAddress = dnsPlan.address.ifBlank { VpnDefaults.DNS }
+        builder.addDnsServer(dnsAddress)
+        if (dnsPlan.hostRouteRequired) {
+            // 前缀 >= 31 时子网内没有第二个主机位，只能显式补一条主机路由
+            runCatching { builder.addRoute(dnsAddress, 32) }
+                .onFailure { Log.w(TAG, "add dns host route failed", it) }
         }
 
         var routeCount = 0
@@ -347,19 +372,26 @@ class AppVpnService : android.net.VpnService() {
     }
 
     private fun applyUnderlyingNetworks(builder: Builder) {
+        // setUnderlyingNetworks 需要 API 33（Android 13），低版本调用会抛
+        // UnsupportedOperationException，导致 VPN 直接起不来。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
         val networks = connectivity.allNetworksCompat().filter { network ->
             val caps = connectivity.getNetworkCapabilities(network) ?: return@filter false
             !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         }
         if (networks.isNotEmpty()) {
-            builder.setUnderlyingNetworks(networks.toTypedArray())
+            runCatching { builder.setUnderlyingNetworks(networks.toTypedArray()) }
+                .onFailure { Log.w(TAG, "set underlying networks failed", it) }
         }
     }
 
     companion object {
         const val ACTION_START = "cn.moncn.sing_box_windows.vpn.ACTION_START"
         const val ACTION_STOP = "cn.moncn.sing_box_windows.vpn.ACTION_STOP"
+        private const val TAG = "AppVpnService"
         private const val CHANNEL_ID = "singbox_vpn"
         private const val NOTIFICATION_ID = 2001
     }

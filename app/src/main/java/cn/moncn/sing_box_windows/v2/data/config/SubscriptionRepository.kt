@@ -4,6 +4,7 @@ import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionEditResult
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionItem
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionState
 import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionUpdateResult
+import cn.moncn.sing_box_windows.v2.domain.subscription.SubscriptionUrl
 
 import android.content.Context
 import android.net.Uri
@@ -53,7 +54,7 @@ object SubscriptionRepository {
         withContext(Dispatchers.IO) {
             val state = loadInternal(context)
             val cleanName = name.trim()
-            val cleanUrl = url.trim()
+            val cleanUrl = SubscriptionUrl.normalize(url)
             val displayName = cleanName.ifBlank { deriveName(cleanUrl, state.items.size + 1) }
             val newItem = SubscriptionItem(
                 id = UUID.randomUUID().toString(),
@@ -141,7 +142,7 @@ object SubscriptionRepository {
                     nameChanged = nameChanged
                 )
             }
-            val cleanUrl = url.trim()
+            val cleanUrl = SubscriptionUrl.normalize(url)
             if (cleanUrl.isBlank()) {
                 return@withContext SubscriptionEditResult(
                     ok = false,

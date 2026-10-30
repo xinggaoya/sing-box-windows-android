@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.v2.data.config
 
+import cn.moncn.sing_box_windows.vpn.VpnDefaults
 import org.json.JSONArray
 import org.json.JSONObject
 import org.yaml.snakeyaml.Yaml
@@ -205,11 +206,33 @@ object TemplateConfigBuilder {
         return outbounds
     }
 
+    /**
+     * DNS 段。
+     *
+     * 设计要点（均与 sing-box 1.14 的官方要求一致）：
+     *
+     * 1. **服务器地址一律使用 IP**。sing-box 1.14 规定：DNS 服务器地址为域名时，
+     *    该服务器必须自带 `domain_resolver`（`route.default_domain_resolver` 不能替代），
+     *    否则内核启动即失败：
+     *    `initialize DNS server[N]: missing domain resolver for domain server address`。
+     *    全部使用 IP 即可彻底避开该约束。
+     * 2. **直连解析使用普通 UDP**。原先的 DoH3（HTTP/3 over QUIC）一旦遇到网络侧
+     *    QUIC 限速/阻断，所有解析同时失效，设备表现为「WiFi 无网络」且无法分流；
+     *    普通 UDP/53 是国内网络中最稳的直连解析路径。
+     * 3. **代理解析走 DoH**（1.1.1.1，经代理出站），避免境外域名被直连链路污染。
+     * 4. `dns_resolver` 为引导解析器，用于解析代理节点域名（route.default_domain_resolver）。
+     */
     private fun buildDnsConfig(): JSONObject {
         return JSONObject()
             .put(
                 "servers",
                 JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("type", "udp")
+                            .put("server", "223.5.5.5")
+                            .put("tag", TAG_DNS_DIRECT)
+                    )
                     .put(
                         JSONObject()
                             .put("type", "https")
@@ -218,23 +241,12 @@ object TemplateConfigBuilder {
                             .put("path", "/dns-query")
                             .put("tag", TAG_DNS_PROXY)
                             .put("detour", TAG_AUTO)
-                            .put("domain_resolver", TAG_DNS_RESOLVER)
-                    )
-                    .put(
-                        JSONObject()
-                            .put("type", "h3")
-                            .put("server", "dns.alidns.com")
-                            .put("server_port", 443)
-                            .put("path", "/dns-query")
-                            .put("tag", TAG_DNS_DIRECT)
-                            .put("domain_resolver", TAG_DNS_RESOLVER)
                     )
                     .put(
                         JSONObject()
                             .put("type", "tls")
                             .put("server", "8.8.4.4")
                             .put("tag", TAG_DNS_GOOGLE)
-                            .put("domain_resolver", TAG_DNS_RESOLVER)
                     )
                     .put(
                         JSONObject()
@@ -521,13 +533,19 @@ object TemplateConfigBuilder {
             .put(
                 "address",
                 JSONArray()
-                    .put("172.18.0.1/30")
+                    .put("${VpnDefaults.ADDRESS}/${VpnDefaults.PREFIX}")
                     .put("fdfe:dcba:9876::1/126")
             )
+            // 注意：不要显式声明 dns_address。
+            // sing-box 1.14 仅在未声明 dns_address 时，才会把「发往该地址的连接」
+            // 自动按 DNS 处理（含 Android Private DNS 的 DoT/853），
+            // 显式声明反而会让 DoT 连接泄漏到真实网络并超时。
+            // DNS 地址由内核按「第一个 IPv4 地址 + 1」派生：
+            // 172.18.0.1/30 → 172.18.0.2（合法主机地址，不可为广播地址）。
             .put("mtu", 9000)
             .put("auto_route", true)
             .put("strict_route", true)
-            .put("stack", "system")
+            .put("stack", VpnDefaults.STACK)
             .put(
                 "platform",
                 JSONObject()

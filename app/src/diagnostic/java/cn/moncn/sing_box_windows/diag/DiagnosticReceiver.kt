@@ -10,8 +10,11 @@ import android.util.Log
 import android.net.VpnService
 import cn.moncn.sing_box_windows.v2.data.core.CoreCommandBridge
 import cn.moncn.sing_box_windows.vpn.VpnController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 
 /**
@@ -47,6 +50,26 @@ class DiagnosticReceiver : BroadcastReceiver() {
                 VpnController.stop(context.applicationContext)
             }
 
+            ACTION_DUMP_LOGS -> {
+                val ctx = context.applicationContext
+                // 内核日志默认只在日志页可见时订阅，广播方式临时订阅并持续抓取，
+                // 便于自动化排查（DNS / 路由 / 出站）问题。
+                Thread {
+                    runBlocking {
+                        runCatching { CoreCommandBridge.gateway.observeLogs(true) }
+                        repeat(20) {
+                            delay(1_500)
+                            val entries = runCatching {
+                                CoreCommandBridge.gateway.logsFlow.first()
+                            }.getOrDefault(emptyList())
+                            val text = entries.joinToString("\n") { "[${it.level}] ${it.message}" }
+                            Log.i(TAG, "kernel logs (${entries.size}):\n$text")
+                            runCatching { File(ctx.filesDir, "kernel-logs.txt").writeText(text) }
+                        }
+                        runCatching { CoreCommandBridge.gateway.observeLogs(false) }
+                    }
+                }.start()
+            }
             ACTION_MEM_ONESHOT -> {
                 val text = MemoryProbe.snapshot(context, includeSmaps = true)
                 Log.i(TAG, "diag mem:\n$text")
@@ -70,6 +93,7 @@ class DiagnosticReceiver : BroadcastReceiver() {
 
         const val ACTION_CONNECT = "cn.moncn.sing_box_windows.DIAG_CONNECT"
         const val ACTION_DISCONNECT = "cn.moncn.sing_box_windows.DIAG_DISCONNECT"
+        const val ACTION_DUMP_LOGS = "cn.moncn.sing_box_windows.DIAG_DUMP_LOGS"
         const val ACTION_MEM_ONESHOT = "cn.moncn.sing_box_windows.DIAG_MEM_ONESHOT"
         const val ACTION_MEM_START = "cn.moncn.sing_box_windows.DIAG_MEM_START"
         const val ACTION_MEM_STOP = "cn.moncn.sing_box_windows.DIAG_MEM_STOP"

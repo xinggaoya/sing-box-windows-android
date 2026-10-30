@@ -17,19 +17,38 @@ object ConfigRepository {
 
     suspend fun loadOrCreateConfig(context: Context): String = withContext(Dispatchers.IO) {
         fileMutex.withLock {
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) {
-                val defaultJson = ConfigDefaults.defaultConfigJson()
-                writeAtomically(file, defaultJson)
-                return@withLock defaultJson
-            }
-            val raw = file.readText()
-            val migrated = ConfigMigrator.migrate(migrateTunAddress(raw))
-            if (migrated != raw) {
-                writeAtomically(file, migrated)
-            }
-            migrated
+            loadOrCreateConfigFrom(File(context.filesDir, FILE_NAME))
         }
+    }
+
+    /**
+     * 读取（必要时创建 / 修复）配置文件。
+     *
+     * 抽成与 Android 无关的纯函数，便于单元测试覆盖「空文件 / 损坏文件自愈」。
+     */
+    internal fun loadOrCreateConfigFrom(file: File): String {
+        if (!file.exists()) {
+            val defaultJson = ConfigDefaults.defaultConfigJson()
+            writeAtomically(file, defaultJson)
+            return defaultJson
+        }
+        val raw = file.readText()
+        // 空文件 / 损坏文件会导致内核报「unexpected end of JSON input」而永远连不上，
+        // 这里直接重建兜底配置，避免用户陷入无法自愈的死局。
+        if (raw.isBlank() || !isParsable(raw)) {
+            val defaultJson = ConfigDefaults.defaultConfigJson()
+            writeAtomically(file, defaultJson)
+            return defaultJson
+        }
+        val migrated = ConfigMigrator.migrate(migrateTunAddress(raw))
+        if (migrated != raw) {
+            writeAtomically(file, migrated)
+        }
+        return migrated
+    }
+
+    private fun isParsable(json: String): Boolean {
+        return runCatching { JSONObject(json) }.isSuccess
     }
 
     suspend fun saveConfig(context: Context, json: String) = withContext(Dispatchers.IO) {
@@ -85,7 +104,8 @@ object ConfigRepository {
         return runCatching {
             val root = JSONObject(json)
             var changed = false
-            changed = changed or migrateTunAddress(root)
+            // 内核格式迁移（含 TUN 地址归一化：sing-box 1.11 → 1.14）
+            changed = changed or ConfigMigrator.migrate(root)
             changed = changed or ensureOutboundGroup(root)
             if (changed) root.toString(2) else json
         }.getOrElse { json }
@@ -95,40 +115,11 @@ object ConfigRepository {
         return runCatching {
             val root = JSONObject(json)
             var changed = false
-            changed = changed or migrateTunAddress(root)
             changed = changed or ensureOutboundGroup(root)
             // 内核格式迁移（sing-box 1.11 → 1.14）：移除已废弃的字段
             changed = changed or ConfigMigrator.migrate(root)
             if (changed) root.toString(2) else json
         }.getOrElse { json }
-    }
-
-    private fun migrateTunAddress(root: JSONObject): Boolean {
-        val inbounds = root.optJSONArray("inbounds") ?: return false
-        var changed = false
-        for (i in 0 until inbounds.length()) {
-            val inbound = inbounds.optJSONObject(i) ?: continue
-            if (inbound.optString("type") != "tun") continue
-            if (inbound.optString("stack", "system") != "system") continue
-            val addresses = inbound.optJSONArray("address") ?: continue
-            val updated = JSONArray()
-            for (j in 0 until addresses.length()) {
-                val address = addresses.optString(j)
-                val replacement = if (address == "${VpnDefaults.ADDRESS}/32") {
-                    "${VpnDefaults.ADDRESS}/${VpnDefaults.PREFIX}"
-                } else {
-                    address
-                }
-                if (replacement != address) {
-                    changed = true
-                }
-                updated.put(replacement)
-            }
-            if (changed) {
-                inbound.put("address", updated)
-            }
-        }
-        return changed
     }
 
     private fun ensureOutboundGroup(root: JSONObject): Boolean {

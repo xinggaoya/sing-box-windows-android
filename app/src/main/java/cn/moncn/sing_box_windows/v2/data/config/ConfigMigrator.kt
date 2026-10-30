@@ -1,5 +1,6 @@
 package cn.moncn.sing_box_windows.v2.data.config
 
+import cn.moncn.sing_box_windows.vpn.VpnDefaults
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -67,11 +68,82 @@ object ConfigMigrator {
      */
     fun migrate(root: JSONObject): Boolean {
         var changed = false
+        changed = changed or migrateTunAddress(root)
         changed = changed or migrateInbounds(root)
         changed = changed or migrateDns(root)
+        changed = changed or ensureDnsDomainResolvers(root)
+        changed = changed or ensureDefaultDomainResolver(root)
         changed = changed or removeClashApi(root)
         return changed
     }
+
+    /**
+     * 归一化 TUN 入站（地址 / DNS 地址 / 协议栈）。
+     *
+     * 1. **地址**：内核按「第一个 IPv4 地址 + 1」派生下发给系统的 DNS 服务器地址。
+     *    历史配置用的是 `10.0.0.2/30`，派生出的 `10.0.0.3` 恰好是该 /30 的**广播地址**，
+     *    Linux 内核会丢弃发往广播地址的报文 —— 系统 DNS 完全不可用，
+     *    表现为 WiFi「无网络」感叹号、所有应用无法联网、域名分流完全失效。
+     *    这里统一归一化为官方示例地址 `172.18.0.1/30`（派生 DNS 为 `172.18.0.2`）。
+     * 2. **DNS 地址**：移除历史配置中可能存在的 `dns_address`。
+     *    sing-box 1.14 只有在**未**声明该字段时，才会把「发往派生 DNS 地址的连接」
+     *    自动按 DNS 处理（含 Android Private DNS 的 DoT/853）；
+     *    一旦显式声明，DoT 连接会按普通流量放行并泄漏到真实网络。
+     * 3. **协议栈**：`system` 栈依赖内核 TCP 在 socketpair 上完成握手，
+     *    实测在 Android 上 TCP 连接全部超时（UDP/ICMP 正常），
+     *    因此统一改为 sing-tun 自带的 `gvisor` 用户态协议栈。
+     */
+    private fun migrateTunAddress(root: JSONObject): Boolean {
+        val inbounds = root.optJSONArray("inbounds") ?: return false
+        var changed = false
+        val canonical = "${VpnDefaults.ADDRESS}/${VpnDefaults.PREFIX}"
+        for (i in 0 until inbounds.length()) {
+            val inbound = inbounds.optJSONObject(i) ?: continue
+            if (inbound.optString("type") != "tun") continue
+
+            // 协议栈：system → gvisor
+            val stack = inbound.optString("stack", "system")
+            if (stack != VpnDefaults.STACK) {
+                inbound.put("stack", VpnDefaults.STACK)
+                changed = true
+            }
+
+            // 地址：统一为官方示例地址
+            val addresses = inbound.optJSONArray("address")
+            if (addresses != null) {
+                val updated = JSONArray()
+                var addressChanged = false
+                for (j in 0 until addresses.length()) {
+                    val address = addresses.optString(j)
+                    val replacement = if (isIpv4Cidr(address)) canonical else address
+                    if (replacement != address) {
+                        addressChanged = true
+                    }
+                    updated.put(replacement)
+                }
+                if (addressChanged) {
+                    inbound.put("address", updated)
+                    changed = true
+                }
+            }
+
+            // 移除 dns_address：sing-box 1.14 只有在未声明该字段时，
+            // 才会把「发往派生 DNS 地址的连接」自动按 DNS 处理（含 DoT/853），
+            // 显式声明会让 Android Private DNS 的 DoT 连接泄漏到真实网络并超时。
+            if (inbound.has("dns_address")) {
+                inbound.remove("dns_address")
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private fun isIpv4Cidr(value: String): Boolean {
+        val host = value.substringBefore('/')
+        return isIpAddress(host)
+    }
+
+    private fun isIpv4(value: String): Boolean = isIpAddress(value)
 
     /**
      * 移除入站 legacy 字段，并在原本依赖入站 sniff 的情况下补上 `action: sniff` 路由动作。
@@ -139,10 +211,95 @@ object ConfigMigrator {
     }
 
     /**
+     * 为「域名地址」的 DNS 服务器补齐 `domain_resolver`。
+     *
+     * sing-box 1.14 的硬性要求：DNS 服务器地址为域名时，**必须**由该服务器自身携带
+     * `domain_resolver`，`route.default_domain_resolver` 不能作为兜底。缺失时内核初始化直接失败：
+     *
+     * ```
+     * initialize DNS server[1]: missing domain resolver for domain server address
+     * ```
+     *
+     * 迁移历史配置时若直接丢弃 legacy 的 `address_resolver`，就会命中该错误，
+     * 导致内核根本起不来（表现为连接失败而不是「无法分流」）。
+     */
+    private fun ensureDnsDomainResolvers(root: JSONObject): Boolean {
+        val dns = root.optJSONObject("dns") ?: return false
+        val servers = dns.optJSONArray("servers") ?: return false
+        var changed = false
+
+        // 优先使用 route.default_domain_resolver 指向的解析器
+        val defaultResolver = root.optJSONObject("route")
+            ?.optJSONObject("default_domain_resolver")
+            ?.optString("server")
+            ?.takeIf { it.isNotBlank() }
+
+        // 其次找一台地址为 IP 的 DNS 服务器作为引导解析器
+        val ipResolverTag = (0 until servers.length())
+            .mapNotNull { servers.optJSONObject(it) }
+            .firstOrNull { server ->
+                val address = server.optString("server")
+                address.isNotBlank() && isIpAddress(address)
+            }
+            ?.optString("tag")
+            ?.takeIf { it.isNotBlank() }
+
+        val fallback = defaultResolver ?: ipResolverTag ?: return changed
+
+        for (i in 0 until servers.length()) {
+            val server = servers.optJSONObject(i) ?: continue
+            val address = server.optString("server")
+            if (address.isBlank() || isIpAddress(address)) continue
+            if (server.optString("domain_resolver").isNotBlank()) continue
+            server.put("domain_resolver", fallback)
+            changed = true
+        }
+        return changed
+    }
+
+    /**
+     * 确保 `route.default_domain_resolver` 存在。
+     *
+     * sing-box 1.14 起，出站/服务端使用域名时必须指定解析器；
+     * 缺失会导致出站无法解析节点域名（表现为「节点全部超时」）。
+     */
+    private fun ensureDefaultDomainResolver(root: JSONObject): Boolean {
+        val route = root.optJSONObject("route") ?: return false
+        if (route.optJSONObject("default_domain_resolver") != null) return false
+        val servers = root.optJSONObject("dns")?.optJSONArray("servers") ?: return false
+        val resolverTag = (0 until servers.length())
+            .mapNotNull { servers.optJSONObject(it) }
+            .firstOrNull { server ->
+                val address = server.optString("server")
+                address.isNotBlank() && isIpAddress(address)
+            }
+            ?.optString("tag")
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+        route.put(
+            "default_domain_resolver",
+            JSONObject().put("server", resolverTag).put("strategy", "prefer_ipv4")
+        )
+        return true
+    }
+
+    private fun isIpAddress(value: String): Boolean {
+        val parts = value.split('.')
+        if (parts.size != 4) return false
+        return parts.all { part ->
+            part.isNotEmpty() && part.length <= 3 && part.toIntOrNull()?.let { it in 0..255 } == true
+        }
+    }
+
+    /**
      * legacy DNS 服务器格式 → 新格式。
      *
      * legacy: `{"address": "tls://1.1.1.1", "address_resolver": "local"}`
-     * new:    `{"type": "tls", "server": "1.1.1.1"}`
+     * new:    `{"type": "tls", "server": "1.1.1.1", "domain_resolver": "local"}`
+     *
+     * 注意：`address_resolver` 必须映射为 `domain_resolver`。
+     * legacy 格式下解析器写在 `address_resolver`，新格式改名为 `domain_resolver`；
+     * 迁移时丢弃该字段会让「域名地址」的 DNS 服务器缺少解析器，内核启动即失败。
      */
     private fun migrateLegacyDnsServer(server: JSONObject): Boolean {
         if (server.has("type")) return false
@@ -155,10 +312,14 @@ object ConfigMigrator {
         val type = DNS_SCHEME_TO_TYPE[scheme] ?: return false
         val target = address.substring(separator + 3)
 
+        val legacyResolver = server.optString("address_resolver")
         server.remove("address")
         server.remove("address_resolver")
         server.remove("address_strategy")
         server.put("type", type)
+        if (legacyResolver.isNotBlank() && !server.has("domain_resolver")) {
+            server.put("domain_resolver", legacyResolver)
+        }
 
         // target 可能是 host、host:port 或 ipv6
         val host: String

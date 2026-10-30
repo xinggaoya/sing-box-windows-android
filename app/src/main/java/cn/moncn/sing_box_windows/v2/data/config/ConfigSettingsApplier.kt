@@ -3,9 +3,13 @@ package cn.moncn.sing_box_windows.v2.data.config
 import org.json.JSONArray
 import org.json.JSONObject
 import cn.moncn.sing_box_windows.v2.domain.core.CoreClashMode
+import cn.moncn.sing_box_windows.vpn.VpnDefaults
 import cn.moncn.sing_box_windows.v2.domain.settings.AppSettings
 
 object ConfigSettingsApplier {
+    /** 配置中找不到 direct 出站时的兜底标签 */
+    private const val DEFAULT_DIRECT_TAG = "direct"
+
     fun applySettings(rawJson: String, settings: AppSettings): String {
         return runCatching {
             val root = JSONObject(rawJson)
@@ -36,13 +40,32 @@ object ConfigSettingsApplier {
     fun applyClashMode(rawJson: String, mode: CoreClashMode): String {
         return runCatching {
             val root = JSONObject(rawJson)
-            applyModeToRules(root.optJSONObject("route")?.optJSONArray("rules"), mode)
-            applyModeToRules(root.optJSONObject("dns")?.optJSONArray("rules"), mode)
+            val directTag = findDirectOutboundTag(root)
+            applyModeToRules(root.optJSONObject("route")?.optJSONArray("rules"), mode, directTag)
+            applyModeToRules(root.optJSONObject("dns")?.optJSONArray("rules"), mode, null)
             root.toString(2)
         }.getOrElse { rawJson }
     }
 
-    private fun applyModeToRules(rules: JSONArray?, mode: CoreClashMode) {
+    /**
+     * 找到配置中 `type=direct` 的出站标签。
+     *
+     * 「直连」模式下必须真正走直连出站，而不是走「本地直连」选择组
+     * （该组默认直连，但可被用户切换到代理节点）。
+     */
+    private fun findDirectOutboundTag(root: JSONObject): String {
+        val outbounds = root.optJSONArray("outbounds") ?: return DEFAULT_DIRECT_TAG
+        for (index in 0 until outbounds.length()) {
+            val outbound = outbounds.optJSONObject(index) ?: continue
+            if (outbound.optString("type") == "direct") {
+                val tag = outbound.optString("tag")
+                if (tag.isNotBlank()) return tag
+            }
+        }
+        return DEFAULT_DIRECT_TAG
+    }
+
+    private fun applyModeToRules(rules: JSONArray?, mode: CoreClashMode, directTag: String?) {
         if (rules == null) return
         val kept = JSONArray()
         for (index in 0 until rules.length()) {
@@ -60,6 +83,10 @@ object ConfigSettingsApplier {
             if (!keep) continue
             // 去掉 clash_mode 字段 → 该规则变成无条件命中
             rule.remove("clash_mode")
+            // 「直连」模式下强制走直连出站，避免落到可选代理的「本地直连」组
+            if (mode == CoreClashMode.DIRECT && directTag != null && rule.has("outbound")) {
+                rule.put("outbound", directTag)
+            }
             kept.put(rule)
         }
         // JSONArray 无法重新赋值，需要原地重建
@@ -83,6 +110,11 @@ object ConfigSettingsApplier {
             inbound.put("mtu", settings.tunMtu)
             inbound.put("auto_route", settings.tunAutoRoute)
             inbound.put("strict_route", settings.tunStrictRoute)
+            // 协议栈固定为 gvisor：system 栈在 Android 上 TCP 连接全部超时
+            inbound.put("stack", VpnDefaults.STACK)
+            // 移除 dns_address：保留内核「地址 + 1」的派生与自动 DNS 劫持能力
+            // （Android Private DNS 的 DoT/853 依赖该能力）
+            inbound.remove("dns_address")
             val platform = inbound.optJSONObject("platform") ?: JSONObject().also {
                 inbound.put("platform", it)
             }
