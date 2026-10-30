@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import cn.moncn.sing_box_windows.v2.core.arch.MviViewModel
+import cn.moncn.sing_box_windows.v2.data.core.ProcessMemory
+import cn.moncn.sing_box_windows.v2.domain.core.MemorySnapshot
 import cn.moncn.sing_box_windows.v2.domain.runtime.RuntimeGateway
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -69,7 +71,9 @@ class HomeViewModel(
             runtimeGateway.coreStatusFlow.collectLatest { status ->
                 updateState { current ->
                     current.copy(
-                        coreStatus = status
+                        coreStatus = status,
+                        // 与状态推送同频（1 次/秒）采样，避免高频读 /proc
+                        memory = ProcessMemory.snapshot()
                     )
                 }
             }

@@ -240,7 +240,27 @@ internal fun HomeScreenV2(
                 ) {
                     MetricRow {
                         MetricTile(
-                            label = "内存",
+                            label = "常驻",
+                            value = Format.memory(state.memory?.rssBytes ?: 0L),
+                            compact = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricTile(
+                            label = "Java 堆",
+                            value = Format.memory(state.memory?.javaHeapUsedBytes ?: 0L),
+                            compact = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricTile(
+                            label = "native 堆",
+                            value = Format.memory(state.memory?.nativeHeapBytes ?: 0L),
+                            compact = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    MetricRow {
+                        MetricTile(
+                            label = "内核上报",
                             value = Format.memory(status?.memory ?: 0L),
                             compact = true,
                             modifier = Modifier.weight(1f)

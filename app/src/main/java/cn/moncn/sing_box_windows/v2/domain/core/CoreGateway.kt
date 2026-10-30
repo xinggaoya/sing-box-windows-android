@@ -43,6 +43,21 @@ interface CoreGateway {
     /** 断开命令通道（幂等） */
     suspend fun disconnect()
 
+    /**
+     * 按需订阅连接事件。
+     *
+     * 连接事件是频率最高的数据流，不在视野内时不应产生任何订阅，
+     * 以避免 gomobile 代理对象堆积导致进程内存持续增长。
+     */
+    suspend fun observeConnections(enabled: Boolean)
+
+    /**
+     * 按需订阅内核日志。
+     *
+     * 日志同样是高频流，仅在日志页可见时订阅。
+     */
+    suspend fun observeLogs(enabled: Boolean)
+
     /** 选择代理组中的出站 */
     suspend fun selectOutbound(groupTag: String, outboundTag: String): Result<Unit>
 

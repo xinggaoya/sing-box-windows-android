@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cn.moncn.sing_box_windows.ui.Format
 import cn.moncn.sing_box_windows.ui.components.AppAlertDialog
@@ -55,6 +59,18 @@ fun ConnectionsRouteV2(
         factory = ConnectionsViewModel.factory(coreGateway)
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // 连接事件是高频流：仅在页面可见时订阅，避免无谓的代理对象堆积
+    LaunchedEffect(coreGateway) {
+        coreGateway.observeConnections(true)
+        try {
+            // 挂起直到页面离开
+            awaitCancellation()
+        } finally {
+            // 协程被取消后无法再执行挂起调用，需切到 NonCancellable 完成退订
+            withContext(NonCancellable) { coreGateway.observeConnections(false) }
+        }
+    }
 
     if (!state.error.isNullOrBlank()) {
         AppAlertDialog(

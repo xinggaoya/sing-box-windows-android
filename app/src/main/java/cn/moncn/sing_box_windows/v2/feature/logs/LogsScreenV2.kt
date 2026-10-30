@@ -20,12 +20,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cn.moncn.sing_box_windows.ui.components.AppAlertDialog
 import cn.moncn.sing_box_windows.ui.components.AppPageColumn
@@ -49,6 +53,17 @@ fun LogsRouteV2(
 ) {
     val viewModel: LogsViewModel = viewModel(factory = LogsViewModel.factory(coreGateway))
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // 日志同样是高频流：仅在页面可见时订阅
+    LaunchedEffect(coreGateway) {
+        coreGateway.observeLogs(true)
+        try {
+            awaitCancellation()
+        } finally {
+            // 协程被取消后无法再执行挂起调用，需切到 NonCancellable 完成退订
+            withContext(NonCancellable) { coreGateway.observeLogs(false) }
+        }
+    }
 
     if (!state.error.isNullOrBlank()) {
         AppAlertDialog(
