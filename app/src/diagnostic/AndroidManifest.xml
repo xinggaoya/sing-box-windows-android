@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      仅存在于 diagnostic 构建（src/diagnostic），不会进入正式包。
+      通过 adb broadcast 驱动连接 / 断开 / 内存采样，避免依赖界面点击。
+    -->
+    <application>
+        <receiver
+            android:name="cn.moncn.sing_box_windows.diag.DiagnosticReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cn.moncn.sing_box_windows.DIAG_CONNECT" />
+                <action android:name="cn.moncn.sing_box_windows.DIAG_DISCONNECT" />
+                <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_ONESHOT" />
+                <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_START" />
+                <action android:name="cn.moncn.sing_box_windows.DIAG_MEM_STOP" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

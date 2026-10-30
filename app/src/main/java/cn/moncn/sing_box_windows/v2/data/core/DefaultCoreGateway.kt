@@ -104,13 +104,23 @@ class DefaultCoreGateway : CoreGateway {
 
     override suspend fun connect() {
         clientMutex.withLock {
-            if (coreClient != null) return
+            // 通道已存在但处于异常态（如内核侧关闭了某条流）时，
+            // 必须重建客户端才能恢复；否则重连逻辑会因「客户端非空」而空转。
+            if (coreClient != null) {
+                if (connectionStateState.value != CoreConnectionState.DISCONNECTED_ERROR) return
+                releaseClients()
+            }
             connectionStateState.value = CoreConnectionState.CONNECTING
             createClient(
+                // 注意：不要订阅 CommandClashMode。
+                // 本项目的配置使用 sing-box 1.14 原生的 route.rules[].clash_mode，
+                // 并未开启 experimental.clash_api，因此内核的 GetClashModeStatus
+                // 会永久返回 invalid argument；上游客户端把该错误视为致命错误并
+                // 回调 Disconnected()，导致整条命令通道被判死（首页协程/连接恒为 0）。
+                // 代理模式改为「改配置 + 重载内核」实现。
                 commands = intArrayOf(
                     Libbox.CommandStatus,
                     Libbox.CommandGroup,
-                    Libbox.CommandClashMode,
                     Libbox.CommandOutbounds
                 ),
                 onCreated = { coreClient = it }
@@ -118,16 +128,15 @@ class DefaultCoreGateway : CoreGateway {
         }
     }
 
-    override suspend fun disconnect() {
-        val clients = clientMutex.withLock {
-            val list = listOfNotNull(coreClient, connectionsClient, logsClient)
-            coreClient = null
-            connectionsClient = null
-            logsClient = null
-            list
-        }
+    /**
+     * 关闭并清空所有命令客户端（不改变连接状态）。
+     */
+    private suspend fun releaseClients() {
+        val clients = listOfNotNull(coreClient, connectionsClient, logsClient)
+        coreClient = null
+        connectionsClient = null
+        logsClient = null
         if (clients.isEmpty()) return
-
         userDisconnecting = true
         try {
             withContext(Dispatchers.IO) {
@@ -135,6 +144,12 @@ class DefaultCoreGateway : CoreGateway {
             }
         } finally {
             userDisconnecting = false
+        }
+    }
+
+    override suspend fun disconnect() {
+        clientMutex.withLock {
+            releaseClients()
         }
         connectionStateState.value = CoreConnectionState.DISCONNECTED
         statusState.value = null

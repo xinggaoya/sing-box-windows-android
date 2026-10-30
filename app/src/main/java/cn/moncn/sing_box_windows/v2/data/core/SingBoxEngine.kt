@@ -41,9 +41,6 @@ object SingBoxEngine {
         platform: PlatformInterface,
         callbacks: CoreServerCallbacks
     ): CoreStartResult {
-        if (server != null) {
-            return CoreStartResult(ok = true)
-        }
         this.callbacks = callbacks
         var instance: CommandServer? = null
         return try {
@@ -59,6 +56,18 @@ object SingBoxEngine {
                         error = "配置校验失败：${error.message ?: error.javaClass.simpleName}"
                     )
                 }
+
+            // 命令服务（gRPC daemon）在进程内**常驻复用**：
+            // 每次连接/断开都销毁重建 CommandServer，会让内核侧的
+            // observer / subscriber / 日志缓冲等全局状态反复重建，
+            // 旧实例的存活引用无法被 FreeOSMemory 回收，
+            // 实测每次「连接→断开」Go 堆净增 2~3MB 且不回落（内存暴涨）。
+            // 这里只在首次启动时创建命令服务，之后仅重载内核实例。
+            val existing = server
+            if (existing != null) {
+                existing.startOrReloadService(configJson, OverrideOptions())
+                return CoreStartResult(ok = true)
+            }
 
             instance = Libbox.newCommandServer(handler, platform)
             // 拉起本地命令服务（未配置端口时使用 basePath 下的 unix socket）
@@ -80,9 +89,30 @@ object SingBoxEngine {
         }
     }
 
-    /** 停止内核并释放命令服务 */
+    /**
+     * 停止内核实例（断开连接）。
+     *
+     * 只关闭 box service，**保留命令服务**以便下次连接复用；
+     * 彻底释放命令服务请使用 [release]。
+     */
     fun stop() {
-        release()
+        val instance = server ?: return
+        runCatching { instance.closeService() }
+            .onFailure { Log.w(TAG, "close service failed", it) }
+    }
+
+    /**
+     * 彻底释放命令服务与内核（进程退出 / 服务销毁时调用）。
+     */
+    fun release() {
+        val instance = server
+        server = null
+        callbacks = null
+        if (instance == null) return
+        runCatching { instance.closeService() }
+            .onFailure { Log.w(TAG, "close service failed", it) }
+        runCatching { instance.close() }
+            .onFailure { Log.w(TAG, "close command server failed", it) }
     }
 
     /**
@@ -92,17 +122,6 @@ object SingBoxEngine {
     fun reload(configJson: String): Result<Unit> {
         val instance = server ?: return Result.failure(IllegalStateException("内核未运行"))
         return runCatching { instance.startOrReloadService(configJson, OverrideOptions()) }
-    }
-
-    private fun release() {
-        val instance = server
-        server = null
-        callbacks = null
-        if (instance == null) return
-        runCatching { instance.closeService() }
-            .onFailure { Log.w(TAG, "close service failed", it) }
-        runCatching { instance.close() }
-            .onFailure { Log.w(TAG, "close command server failed", it) }
     }
 
     private val handler = object : CommandServerHandler {

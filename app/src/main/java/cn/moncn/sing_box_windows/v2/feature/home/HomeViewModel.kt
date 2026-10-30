@@ -113,14 +113,29 @@ class HomeViewModel(
     /**
      * 采样进程内存分解。
      *
-     * 读取 `/proc/self/ 下的 statm 与 smaps_rollup` 是阻塞操作，且 `smaps_rollup` 需要遍历进程页表，
-     * 必须在 IO 线程执行并降低频率，否则会拖垮主线程造成卡顿。
+     * 读取 `/proc/self/statm` 很廉价；`/proc/self/smaps_rollup` 需要遍历整个进程的页表，
+     * 进程越大越慢，因此：
+     * - 廉价指标每次采样都刷新（保证数字跟手）；
+     * - 页表类指标（PSS / 私有内存 / 匿名内存）降频采集，期间沿用上一次的结果。
+     *
+     * 采样统一放在 IO 线程，避免拖垮主线程造成卡顿。
      */
     private fun observeProcessMemory() {
         viewModelScope.launch(Dispatchers.IO) {
+            var tick = 0
             while (isActive) {
-                val snapshot = ProcessMemory.snapshot(includePss = true)
-                updateState { current -> current.copy(memory = snapshot) }
+                val withRollup = tick % ROLLUP_SAMPLE_EVERY_TICKS == 0
+                val fresh = ProcessMemory.snapshot(includePageTable = withRollup)
+                updateState { current ->
+                    current.copy(
+                        memory = ProcessMemory.merge(
+                            previous = current.memory,
+                            fresh = fresh,
+                            withPageTable = withRollup
+                        )
+                    )
+                }
+                tick++
                 delay(MEMORY_SAMPLE_INTERVAL_MS)
             }
         }
@@ -160,6 +175,12 @@ class HomeViewModel(
     companion object {
         /** 内存指标采样间隔（毫秒）：读 /proc 较慢，5 秒足够观察趋势 */
         private const val MEMORY_SAMPLE_INTERVAL_MS = 5_000L
+
+        /**
+         * 页表类指标（/proc/self/smaps）的采样降频倍数。
+         * 每 3 个 tick（15 秒）读一次，避免频繁遍历进程页表造成卡顿。
+         */
+        private const val ROLLUP_SAMPLE_EVERY_TICKS = 3
 
         fun factory(runtimeGateway: RuntimeGateway): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {

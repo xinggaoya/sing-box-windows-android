@@ -19,9 +19,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,15 +53,29 @@ class AndroidRuntimeGateway(
 
     override val coreStatusFlow: Flow<CoreStatus?> = coreGateway.statusFlow
 
-    override val modeFlow: Flow<CoreClashMode?> = coreGateway.currentModeFlow
-        .map { raw -> CoreClashMode.fromRaw(raw) }
-        .distinctUntilChanged()
+    /** 当前代理模式（可写，用于切换后立即刷新 UI） */
+    private val modeState = MutableStateFlow<CoreClashMode?>(null)
 
-    override val modeSupportedFlow: Flow<Boolean> = coreGateway.clashModesFlow
-        .map { modes -> modes.isNotEmpty() }
-        .distinctUntilChanged()
+    /**
+     * 当前代理模式。
+     *
+     * 代理模式由配置（`route.rules[].clash_mode`）表达，**不再**由内核命令通道
+     * 下发（该接口依赖 `experimental.clash_api`，本项目未开启），
+     * 因此模式取自本地设置。
+     *
+     * 注意：不能直接用 `snapshotFlow { SettingsRepository.load(...) }`——
+     * SharedPreferences 不是 Compose 快照状态，`snapshotFlow` 不会因它变化而重新发射，
+     * 会导致分段控件点击后选中态不刷新。
+     */
+    override val modeFlow: Flow<CoreClashMode?> = modeState.asStateFlow()
+
+    /** 模式由配置表达，三种模式始终可用 */
+    override val modeSupportedFlow: Flow<Boolean> = flowOf(true)
 
     init {
+        scope.launch {
+            modeState.value = CoreClashMode.fromRaw(SettingsRepository.load(appContext).clashMode)
+        }
         scope.launch {
             vpnStateFlow.collectLatest { state ->
                 val connected = state == VpnState.CONNECTED || state == VpnState.CONNECTING
@@ -108,13 +125,18 @@ class AndroidRuntimeGateway(
         if (persistResult.isFailure) {
             return persistResult
         }
-        // 未连接时内核命令通道不可用，仅保存偏好（连接建立后会自动下发），
-        // 此时返回成功，避免给用户弹出与页面文案相矛盾的失败提示。
-        val channelReady = coreGateway.connectionStateFlow.first() == CoreConnectionState.CONNECTED
-        if (!channelReady) {
+        // 立即刷新 UI 选中态（设置写入成功即生效）
+        modeState.value = mode
+        // 未连接时内核未运行，仅保存偏好（连接建立时会用新配置启动内核）。
+        val running = VpnStateStore.state == VpnState.CONNECTED ||
+            VpnStateStore.state == VpnState.CONNECTING
+        if (!running) {
             return Result.success(Unit)
         }
-        return coreGateway.setClashMode(mode.raw)
+        // 已连接：改配置后重载内核，使新模式立即生效。
+        // （代理模式由 route.rules[].clash_mode 表达，内核命令通道的
+        //   SetClashMode 依赖 experimental.clash_api，本项目未开启，不可用。）
+        return CoreRuntimeCoordinator.reloadCore(appContext)
     }
 
     private suspend fun persistModePreference(mode: CoreClashMode): Result<Unit> {

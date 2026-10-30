@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -377,7 +379,11 @@ private fun AddSubscriptionDialog(
                         value = remoteUrl,
                         onValueChange = { remoteUrl = it },
                         label = "订阅 URL",
-                        placeholder = "https://example.com/sub"
+                        placeholder = "https://example.com/sub",
+                        // URL 大小写敏感：禁止输入法自动大写与纠错
+                        keyboardType = KeyboardType.Uri,
+                        keyboardCapitalization = KeyboardCapitalization.None,
+                        autoCorrect = false
                     )
                 } else {
                     AppTextField(
@@ -424,7 +430,11 @@ private fun EditSubscriptionDialog(
                     value = url,
                     onValueChange = { url = it },
                     label = "地址",
-                    enabled = !item.isLocal
+                    enabled = !item.isLocal,
+                    // URL 大小写敏感：禁止输入法自动大写与纠错
+                    keyboardType = KeyboardType.Uri,
+                    keyboardCapitalization = KeyboardCapitalization.None,
+                    autoCorrect = false
                 )
             }
         }

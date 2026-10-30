@@ -44,6 +44,16 @@ android {
             signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+
+        // 诊断构建：debuggable（可用 run-as 抓取进程内 /proc 快照），
+        // 但沿用发布签名，从而可以直接覆盖安装到设备上并保留用户数据。
+        diagnostic {
+            initWith debug
+            signingConfig signingConfigs.release
+            matchingFallbacks = ['release']
+            applicationIdSuffix ''
+            versionNameSuffix '-diag'
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -67,7 +77,8 @@ android {
         abi {
             enable true
             reset()
-            include "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+            // 可通过 -PabiIncludes=arm64-v8a 只构建单个 ABI，缩短本地调试构建时间
+            include ((project.findProperty('abiIncludes') ?: 'arm64-v8a,armeabi-v7a,x86,x86_64').split(','))
             // 关闭通用包，按 ABI 输出独立 APK
             universalApk false
         }

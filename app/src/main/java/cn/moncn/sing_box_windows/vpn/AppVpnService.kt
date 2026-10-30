@@ -74,7 +74,8 @@ class AppVpnService : android.net.VpnService() {
         // 兜底：服务被系统销毁时内核也必须关闭，否则下次无法重新启动 VPN。
         shutdownScope.launch {
             runCatching { CoreCommandBridge.disconnect() }
-            runCatching { SingBoxEngine.stop() }
+            // 服务销毁 = 进程内不再需要内核，彻底释放命令服务
+            runCatching { SingBoxEngine.release() }
         }
     }
 

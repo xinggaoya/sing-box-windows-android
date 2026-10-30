@@ -17,3 +17,6 @@ local.properties
 /app/release
 nul
 .kotlin
+
+# Robolectric 依赖缓存（某些环境下未展开 ${user.home} 而落到项目内）
+/app/\${user.home}/

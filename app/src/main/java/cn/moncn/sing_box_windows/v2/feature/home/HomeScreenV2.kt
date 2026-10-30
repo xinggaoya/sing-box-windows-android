@@ -235,45 +235,34 @@ internal fun HomeScreenV2(
             item(key = "core") {
                 AppSectionCard(
                     title = "内核",
-                    subtitle = "状态与资源占用",
+                    subtitle = "进程 RSS ${Format.memory(state.memory?.rssBytes ?: 0L)}" +
+                        " · PSS ${Format.memory(state.memory?.pssBytes ?: 0L)}",
                     leadingIcon = Icons.Rounded.Memory
                 ) {
                     MetricRow {
                         MetricTile(
-                            label = "常驻",
-                            value = Format.memory(state.memory?.rssBytes ?: 0L),
-                            compact = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricTile(
-                            label = "Java 堆",
-                            value = Format.memory(state.memory?.javaHeapUsedBytes ?: 0L),
-                            compact = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricTile(
-                            label = "native 堆",
-                            value = Format.memory(state.memory?.nativeHeapBytes ?: 0L),
-                            compact = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    MetricRow {
-                        MetricTile(
-                            label = "内核上报",
-                            value = Format.memory(status?.memory ?: 0L),
+                            label = "内核内存",
+                            value = Format.memory(state.memory?.coreHeapBytes ?: 0L),
                             compact = true,
                             modifier = Modifier.weight(1f)
                         )
                         MetricTile(
                             label = "协程",
-                            value = (status?.goroutines ?: 0).toString(),
+                            value = if (state.connected) {
+                                (status?.goroutines ?: 0).toString()
+                            } else {
+                                "-"
+                            },
                             compact = true,
                             modifier = Modifier.weight(1f)
                         )
                         MetricTile(
                             label = "连接",
-                            value = (status?.connectionsOut ?: 0).toString(),
+                            value = if (state.connected) {
+                                (status?.connectionsOut ?: 0).toString()
+                            } else {
+                                "-"
+                            },
                             compact = true,
                             modifier = Modifier.weight(1f)
                         )

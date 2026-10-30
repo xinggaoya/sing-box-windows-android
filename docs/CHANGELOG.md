@@ -172,6 +172,106 @@ deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0
   确认 **Go 侧 RSS 稳定在 48MB、协程数恒定**，从而排除内核泄漏
 - `SingBoxConfigOracleTest` 继续作为配置格式的内核级校验
 
+### 修复：内存指标口径错误（首页「内核」卡片显示 300MB 实为进程常驻）
+
+**现象**：连接内核后首页「内核」卡片显示 300MB~600MB，看似内核内存暴涨。
+
+**实测结论**（小米 14 Ultra / Android 16，正式包）：
+
+| 指标 | 内核未启动 | 内核已启动 |
+| --- | --- | --- |
+| 卡片显示的「内核上报」= 进程 RSS | 240 MB | 271 MB |
+| TOTAL RSS | 322 MB | 352 MB |
+| TOTAL PSS（真实分摊占用） | 155 MB | 184 MB |
+| Private Dirty（应用独占） | ~28 MB | ~30 MB |
+| Unknown（≈Go 运行时堆） | 7.2 MB | 18.9 MB |
+
+352MB RSS 中，**约 220MB 与内核无关**：`libbox.so` 代码页 ~50MB、APK/dex/资源映射 ~104MB、
+EGL 图形缓冲 74MB。内核真正占用只有 ~18MB。
+
+**根因**：
+
+1. 上游 `daemon.StartedService.readStatus()` 用 `memory.Total()` 上报内存，
+   而 `common/memory/memory_linux.go` 的实现是读 `/proc/self/statm` 的 **RSS**，
+   即**整个 App 进程的常驻内存**（含 ART 堆、Go 堆、libbox.so 代码页、EGL 缓冲）。
+   App 侧把它标注成「内核上报」，与旁边的「常驻」读同一份 `/proc/self/statm`，
+   因此**两列永远相等**，极易被误解为内核泄漏。
+2. RSS 会把**与其他进程共享的文件页**计入，无法反映真实占用。
+
+**修复**：
+
+- 首页「内核」卡片改为展示 **内核内存 / 协程 / 连接** 三项：
+  - **内核内存**：`/proc/self/smaps` 中 `[anon: Go: ...]` 映射（Go 运行时堆、
+    immortal metadata 等）的 RSS 合计——Android 上 Go 运行时映射由
+    `prctl(PR_SET_VMA_ANON_NAME)` 命名，可精确归给内核，实测与 `dumpsys` 的
+    `Unknown` 分类一致
+  - **协程 / 连接**：取自内核 `Status`；未连接时显示 `-`
+- 卡片副标题补充进程级口径：`进程 RSS xxx · PSS xxx`
+- `smaps_rollup` 改为解析 `smaps`（一次读取同时得到 PSS / Private Dirty /
+  Go 堆），并降频到 15 秒一次，避免频繁遍历进程页表造成卡顿
+
+### 修复：命令通道被内核判死（首页协程 / 连接 / 流量恒为 0）
+
+**现象**：连接成功、VPN 可用，但首页「协程 / 连接」始终为 0，流量也不刷新。
+
+**根因**：App 订阅了 `Libbox.CommandClashMode`，但本项目配置使用 sing-box 1.14
+原生的 `route.rules[].clash_mode`，**并未开启 `experimental.clash_api`**，
+内核的 `GetClashModeStatus` 恒返回 `invalid argument`；而上游客户端只容忍
+`NotFound`，其余错误一律回调 `Disconnected()`，导致**整条命令通道被判死**。
+
+**修复**：
+
+- 移除 `CommandClashMode` 订阅（命令通道只保留 Status / Group / Outbounds）
+- `connect()` 在通道处于 `DISCONNECTED_ERROR` 时**重建客户端**，
+  修复了原先「客户端非空即提前返回」导致重连逻辑空转、无法自愈的问题
+- 代理模式改为**改配置 + 重载内核**实现（见下条）
+
+### 修复：代理模式切换无效 / 点击无反应
+
+- **切换无效**：原先通过内核命令通道的 `SetClashMode` 下发模式，但该接口同样依赖
+  `experimental.clash_api`，必然失败。新增 `ConfigSettingsApplier.applyClashMode`：
+  在配置层把 `clash_mode` 规则固化（规则模式删除两条 `clash_mode` 规则；
+  全局 / 直连模式保留对应规则并去掉 `clash_mode` 字段），再重载内核生效。
+  磁盘上始终保存**模板态**配置（保留 `clash_mode` 规则），
+  只有启动内核时才按当前模式固化，否则规则一旦固化就无法再切回。
+- **点击无反应**：模式流原先用 `snapshotFlow { SettingsRepository.load(...) }`，
+  而 SharedPreferences 不是 Compose 快照状态，`snapshotFlow` 不会重新发射，
+  选中态永远不刷新。改为 `MutableStateFlow`，切换后立即更新 UI。
+
+### 修复：多订阅切换不生效
+
+订阅启用 / 同步后会重新生成 `singbox.json`，但**没有重载正在运行的内核**，
+必须断开重连才会生效。现在订阅变更成功后会自动重载内核（未连接时跳过，
+下次连接直接使用新配置）。
+
+### 修复：订阅 URL 被输入法自动大写导致地址失效
+
+输入法默认把 `/` 后的首字母大写（`https://host/api/...` → `https://host/API/...`），
+订阅地址大小写敏感会直接失效。`AppTextField` 新增 `keyboardCapitalization` /
+`autoCorrect` 参数，URL 输入框改为 `KeyboardCapitalization.None` + 关闭自动纠错。
+
+### 修复：内核实例反复重建导致 Go 堆单调增长
+
+**实测**（模拟器，连续 8 次「连接 → 断开」）：
+
+```
+cycle 1: Go 堆 13.5MB → cycle 8: Go 堆 27.0MB   （每次净增 2~3MB，停止后不回落）
+```
+
+**修复**：`SingBoxEngine` 原先每次断开都会 `closeService()` + `close()`，
+把整个 `CommandServer`（gRPC daemon）销毁，下次连接再重建，daemon 侧的全局状态
+反复重建、旧实例引用无法回收。现改为：
+
+- `stop()`：只关闭 box service，**保留命令服务**以便下次连接复用
+- `release()`：彻底释放（服务销毁时调用）
+- `start()`：命令服务已存在时直接 `startOrReloadService` 重载内核
+
+### 新增：诊断构建变体
+
+新增 `diagnostic` 构建类型（debuggable + 沿用发布签名，可直接覆盖安装并保留用户数据），
+内置 `DiagnosticReceiver`：通过广播驱动连接 / 断开 / 内存采样，便于在真机上
+自动化复现与取证；同时支持 `-PabiIncludes=arm64-v8a` 缩短本地构建时间。
+
 ### 文档
 
 - 新增 `docs/ARCHITECTURE_V3.md`，说明内核接口迁移、架构收敛与设计系统方案

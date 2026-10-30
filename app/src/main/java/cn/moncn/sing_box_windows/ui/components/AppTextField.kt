@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,10 @@ import cn.moncn.sing_box_windows.ui.theme.LocalAppColors
  * 统一输入框。
  *
  * 统一圆角、描边与聚焦色，使设置页、订阅编辑对话框的表单观感一致。
+ *
+ * @param keyboardCapitalization 首字母大写策略。**URL 等大小写敏感的内容必须传
+ *   [KeyboardCapitalization.None]**：输入法默认会把 `/` 后的首字母自动大写
+ *   （`https://host/api/...` → `https://host/API/...`），导致地址失效。
  */
 @Composable
 fun AppTextField(
@@ -34,6 +39,8 @@ fun AppTextField(
     enabled: Boolean = true,
     singleLine: Boolean = true,
     keyboardType: KeyboardType = KeyboardType.Text,
+    keyboardCapitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
+    autoCorrect: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     val colors = LocalAppColors.current
@@ -44,7 +51,11 @@ fun AppTextField(
         singleLine = singleLine,
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = keyboardType,
+            capitalization = keyboardCapitalization,
+            autoCorrect = autoCorrect
+        ),
         visualTransformation = visualTransformation,
         shape = RoundedCornerShape(AppRadius.md),
         modifier = modifier.fillMaxWidth(),
