@@ -1,5 +1,109 @@
 # Sing Box Windows - Android VPN 客户端
 
+## v1.3.2 (2026-10-30)
+
+### 修复：启动后「WiFi 无网络」感叹号 / 无法自动分流 / 微信等国内应用无网络
+
+本轮针对用户反馈的三类症状（手机 WiFi 一直显示感叹号、流量不按规则分流、
+微信等国内应用完全没网）做了完整的根因排查。**四个独立缺陷叠加**，
+任一单独存在都足以让设备「看起来连着但实际不能上网」。
+
+#### 1. TUN 地址与内核派生的 DNS 地址冲突 → 系统 DNS 全域瘫痪（首要根因）
+
+- 现象：连接后手机 WiFi 显示感叹号，所有应用提示「未知主机」，
+  基于域名的分流规则全部失效（因为根本没有域名可匹配）。
+- 根因：sing-box 1.14 的 TUN 入站在**未显式配置 `dns_address`** 时，
+  会按「`address` 列表里的第一个 IPv4 地址 **+ 1**」派生下发给系统的 DNS 服务器地址。
+  历史兜底配置用的是 `10.0.0.2/30`，派生出的 `10.0.0.3` 恰好是该 `/30` 的
+  **广播地址**，而 Linux 内核会直接丢弃发往子网广播地址的报文：
+
+  ```
+  local     10.0.0.2 dev tun0 table local proto kernel scope host src 10.0.0.2
+  broadcast 10.0.0.3 dev tun0 table local proto kernel scope link src 10.0.0.2
+  ```
+
+  结果是系统的 DNS 查询**根本没有进入 TUN**，内核的 DNS 模块从未被触发。
+- 修复：
+  - TUN 地址统一归一化为官方文档示例的 `172.18.0.1/30`
+    （派生 DNS 为 `172.18.0.2`，是合法主机地址）；
+  - 新增 `TunAddressPlan`：App 侧不再盲信内核的派生值，而是根据**实际下发
+    TUN 地址与前缀**重新推导一个可用的主机地址，必要时补 `/32` 主机路由，
+    从根上杜绝「DNS 地址落到广播地址」。
+
+#### 2. TUN 使用 `system` 协议栈 → Android 上 TCP 全部超时
+
+- 现象：DNS 能解析，但任何 TCP 连接都超时（UDP/ICMP 正常），
+  表现为「能解析域名但微信、浏览器全都连不上」。
+- 根因：sing-box 的 `system` 栈依赖内核 TCP 在 socketpair 上完成握手，
+  在 Android 上实测不可用；`gvisor`（sing-tun 自带的用户态协议栈）完全正常。
+- 修复：TUN 协议栈固定为 `gvisor`（sing-box 1.15 起也将废弃 `stack` 选项、
+  默认改用 sing-tun 自己的协议栈），并在配置迁移时把历史配置的 `system` 升级过来。
+
+#### 3. 兜底配置缺少 `dns` 段 → 无订阅用户完全无法联网
+
+- 根因：`ConfigDefaults.defaultConfigJson()` 生成的配置里带有
+  `{"protocol":"dns","action":"hijack-dns"}` 路由动作，却**没有 `dns` 段**，
+  系统 DNS 既不会被接管也不会被放行。
+- 修复：兜底配置补齐完整的 `dns` 段（含直连解析器与引导解析器）。
+
+#### 4. 配置迁移丢弃 `address_resolver` → 历史配置启动即失败
+
+- 现象：设备上已持久化的历史配置升级后内核直接起不来：
+  `initialize DNS server[1]: missing domain resolver for domain server address`。
+- 根因：legacy 格式的解析器写在 `address_resolver`，新格式改名为 `domain_resolver`，
+  而迁移逻辑把前者**直接删掉**了。sing-box 1.14 规定：DNS 服务器地址为域名时，
+  **必须**由该服务器自身携带 `domain_resolver`，`route.default_domain_resolver` 不能替代。
+- 修复：`address_resolver` 正确映射为 `domain_resolver`；
+  并为所有「域名地址」的 DNS 服务器补齐解析器、为缺失的 `route.default_domain_resolver` 补默认值。
+
+### 其它修复
+
+- **不得显式声明 `dns_address`**：sing-box 1.14 只有在**未**声明该字段时，
+  才会把「发往派生 DNS 地址的连接」自动按 DNS 处理；显式声明会让
+  Android Private DNS 的 DoT(853) 连接按普通流量放行并泄漏到真实网络（超时）。
+  配置生成、迁移与设置应用三处均已移除该字段。
+- **直连模式真正直连**：「直连」模式原先命中「本地直连」选择组
+  （该组可被切到代理节点），现强制改写为 `direct` 出站。
+- **空/损坏配置自愈**：`singbox.json` 为空或损坏时内核报
+  `unexpected end of JSON input` 且**永远连不上**；现直接重建兜底配置。
+- **订阅地址协议头归一化**：部分输入法仍会把 `https://` 写成 `Https://`，
+  导致订阅地址失效（表现为「添加成功但同步永远失败」）；入库前统一把协议头小写化
+  （路径与参数大小写敏感，保持原样）。
+- **Android 13 以下崩溃隐患**：`setUnderlyingNetworks` 需要 API 33，
+  低版本调用会抛 `UnsupportedOperationException`，已补版本保护。
+- **DNS 直连解析改用普通 UDP**（`223.5.5.5`）：原先的 DoH3（HTTP/3 over QUIC）
+  一旦遇到网络侧 QUIC 限速/阻断，所有解析同时失效；服务器地址一律使用 IP，
+  也顺带避开了 sing-box 1.14 对「域名地址必须自带 domain_resolver」的强制要求。
+
+### 新增
+
+- `TunAddressPlan`：TUN 地址与 DNS 服务器地址的安全推导。
+- `SubscriptionUrl`：订阅地址协议头归一化。
+- 诊断包新增 `DIAG_DUMP_LOGS` 广播：临时订阅内核日志并落盘到
+  `files/kernel-logs.txt`，便于自动化排查 DNS / 路由 / 出站问题。
+- 单元测试新增 26 例（`TunAddressPlanTest`、`ConfigKernelRequirementsTest`、
+  `ConfigRepositoryRecoveryTest`、`SubscriptionUrlTest`），覆盖内核约束与配置自愈；
+  `sing-box check` 只做解码，查不出「能解码但初始化失败」的问题。
+- `scripts/verify-vpn.sh` + `scripts/testproxy.py`：模拟器端到端验证脚本
+  （本地 HTTP CONNECT 代理 + 订阅服务器，用于验证分流是否生效）。
+
+### 验证
+
+- 单元测试 118 例 0 失败；lint 0 Error。
+- 模拟器（Android 17 / x86_64）端到端实测：
+  - DNS：国内、境外域名均可解析（内核日志 `dns: exchange ... NOERROR`）；
+  - TCP：`www.qq.com:443` 直连成功（返回真实服务端响应）；
+  - 自动分流：内核日志确认
+    `match[10] rule_set=[geosite-google geoip-google] => route(Google)`、
+    `match[14] rule_set=[geosite-private geosite-cn geoip-private geoip-cn] => route(本地直连)`，
+    且代理节点侧记录到境外域名的 CONNECT、国内域名不出现代理记录；
+  - 代理模式切换：切到「直连」后内核日志变为 `match[3] => route(direct)`，
+    全部流量改走直连出站；
+  - Android Private DNS 的 DoT 连接被正确接管（`inbound DNS connection from ...`），
+    不再有 853 端口泄漏；
+  - 订阅导入 → 配置生成 → 分流全链路通过。
+
+
 ## v1.3.1 (2026-10-30)
 
 ### 修复

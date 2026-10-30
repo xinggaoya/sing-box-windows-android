@@ -147,6 +147,12 @@ jobs:
           chmod +x scripts/update-libbox.sh
           SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           VERSION_ARG="${{ inputs.libbox_version }}"
+          # 未显式指定时，使用仓库中已记录、且与当前代码一起验证过的内核版本，
+          # 避免发布时内核被静默升级到未经测试的版本。
+          if [ -z "$VERSION_ARG" ] && [ -f app/libs/libbox.version.json ]; then
+            VERSION_ARG=$(sed -n 's/^[[:space:]]*"tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' app/libs/libbox.version.json | head -n 1)
+            echo "使用仓库记录的内核版本: $VERSION_ARG"
+          fi
           ARGS=()
           if [ -n "$SDK_PATH" ]; then
             ARGS+=(--android-sdk "$SDK_PATH")
